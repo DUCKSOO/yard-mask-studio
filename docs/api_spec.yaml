@@ -1,0 +1,613 @@
+openapi: 3.0.3
+info:
+  title: yard-mask-studio API
+  version: 0.1.0
+  description: |
+    SAM2.1 기반 라벨링 도구 API 초안. [labeling-tool-plan-v3.md §10](../labeling-tool-plan-v3.md) 기준.
+    Step 1에서는 계약 고정용이며, 응답 스키마는 Step 2에서 구현과 함께 정밀화한다.
+
+servers:
+  - url: http://127.0.0.1:8000
+    description: 로컬 개발
+
+tags:
+  - name: config
+    description: 활성 설정·스냅샷·롤백
+  - name: datasets
+    description: 테넌트별 데이터셋
+  - name: tiles
+    description: 타일 조회·이미지·메타데이터·상태
+  - name: sam
+    description: SAM 추론
+  - name: annotation
+    description: 라벨 저장·조회·삭제
+  - name: review
+    description: 검수 큐
+  - name: exports
+    description: Export 작업 상태·다운로드
+
+paths:
+  /api/config:
+    get:
+      tags: [config]
+      summary: 현재 활성 설정 조회
+      operationId: getActiveConfig
+      responses:
+        "200":
+          description: LabelingConfig
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabelingConfig"
+    post:
+      tags: [config]
+      summary: 설정 변경 (스냅샷 보존 후 active_config 갱신)
+      operationId: updateActiveConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LabelingConfig"
+      responses:
+        "200":
+          description: 갱신된 설정
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabelingConfig"
+
+  /api/config/validate:
+    post:
+      tags: [config]
+      summary: 변경 영향도 분석만 수행 (저장 없음)
+      operationId: validateConfigChange
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LabelingConfig"
+      responses:
+        "200":
+          description: 검증 결과 placeholder
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/config/rollback/{snapshot_id}:
+    post:
+      tags: [config]
+      summary: config_change_snapshots 에서 특정 버전으로 롤백
+      operationId: rollbackConfig
+      parameters:
+        - name: snapshot_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 롤백 후 설정
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabelingConfig"
+
+  /api/config/snapshots:
+    get:
+      tags: [config]
+      summary: 설정 변경 이력 목록
+      operationId: listConfigSnapshots
+      responses:
+        "200":
+          description: 목록 placeholder
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+
+  /api/config/snapshots/{id}:
+    get:
+      tags: [config]
+      summary: 특정 변경 이력 조회
+      operationId: getConfigSnapshot
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 스냅샷 placeholder
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/tenants/{tenant_id}/datasets:
+    post:
+      tags: [datasets]
+      summary: 데이터셋 생성 (active_config → dataset_config_snapshot 복사)
+      operationId: createDataset
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dataset_id:
+                  type: string
+      responses:
+        "201":
+          description: 생성됨 placeholder
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    get:
+      tags: [datasets]
+      summary: 데이터셋 목록
+      operationId: listDatasets
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+      responses:
+        "200":
+          description: 목록 placeholder
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /api/tenants/{tenant_id}/datasets/{dataset_id}:
+    get:
+      tags: [datasets]
+      summary: 데이터셋 상세
+      operationId: getDataset
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+      responses:
+        "200":
+          description: 상세 placeholder
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/tenants/{tenant_id}/datasets/{dataset_id}/config:
+    get:
+      tags: [datasets]
+      summary: 데이터셋에 고정된 설정 스냅샷 조회
+      operationId: getDatasetConfigSnapshot
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+      responses:
+        "200":
+          description: 불변 LabelingConfig
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabelingConfig"
+
+  /api/tenants/{tenant_id}/datasets/{dataset_id}/tiles/generate:
+    post:
+      tags: [datasets]
+      summary: 타일 생성 작업 시작
+      operationId: generateTiles
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+      responses:
+        "202":
+          description: 비동기 작업 placeholder
+
+  /api/tenants/{tenant_id}/datasets/{dataset_id}/export/unet:
+    post:
+      tags: [datasets]
+      summary: U-Net용 export 시작
+      operationId: exportUnet
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+      responses:
+        "202":
+          description: export_id 등 placeholder
+
+  /api/tenants/{tenant_id}/datasets/{dataset_id}/tiles:
+    get:
+      tags: [tiles]
+      summary: 타일 목록 (필터)
+      operationId: listTiles
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: 타일 목록 placeholder
+
+  /api/tenants/{tenant_id}/datasets/{dataset_id}/tiles/{tile_id}/image:
+    get:
+      tags: [tiles]
+      summary: 타일 이미지 (PNG)
+      operationId: getTileImage
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+        - $ref: "#/components/parameters/tileId"
+      responses:
+        "200":
+          description: image/png
+
+  /api/tenants/{tenant_id}/datasets/{dataset_id}/tiles/{tile_id}/metadata:
+    get:
+      tags: [tiles]
+      summary: 타일 메타데이터 JSON
+      operationId: getTileMetadata
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+        - $ref: "#/components/parameters/tileId"
+      responses:
+        "200":
+          description: metadata JSON
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/tenants/{tenant_id}/datasets/{dataset_id}/tiles/{tile_id}/status:
+    patch:
+      tags: [tiles]
+      summary: 타일 작업 상태 갱신
+      operationId: patchTileStatus
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+        - $ref: "#/components/parameters/tileId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+      responses:
+        "200":
+          description: 갱신됨
+
+  /api/tenants/{tenant_id}/datasets/{dataset_id}/tiles/{tile_id}/sam/predict:
+    post:
+      tags: [sam]
+      summary: SAM mask 후보 추론
+      operationId: samPredict
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+        - $ref: "#/components/parameters/tileId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SamPredictRequest"
+      responses:
+        "200":
+          description: 마스크 후보 placeholder
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/tenants/{tenant_id}/datasets/{dataset_id}/tiles/{tile_id}/annotation:
+    post:
+      tags: [annotation]
+      summary: 최종 annotation 저장 (RLE → 서버에서 PNG)
+      operationId: saveAnnotation
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+        - $ref: "#/components/parameters/tileId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnnotationSaveRequest"
+      responses:
+        "200":
+          description: 저장됨
+    get:
+      tags: [annotation]
+      summary: annotation 조회
+      operationId: getAnnotation
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+        - $ref: "#/components/parameters/tileId"
+      responses:
+        "200":
+          description: AnnotationSaveRequest 유사
+    delete:
+      tags: [annotation]
+      summary: annotation 삭제
+      operationId: deleteAnnotation
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+        - $ref: "#/components/parameters/tileId"
+      responses:
+        "204":
+          description: 삭제됨
+
+  /api/tenants/{tenant_id}/review/queue:
+    get:
+      tags: [review]
+      summary: 검수 큐
+      operationId: getReviewQueue
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+      responses:
+        "200":
+          description: 큐 placeholder (Step 2 이후 정밀화)
+
+  /api/tenants/{tenant_id}/datasets/{dataset_id}/tiles/{tile_id}/review/approve:
+    post:
+      tags: [review]
+      summary: 검수 승인
+      operationId: reviewApprove
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+        - $ref: "#/components/parameters/tileId"
+      responses:
+        "200":
+          description: 승인됨
+
+  /api/tenants/{tenant_id}/datasets/{dataset_id}/tiles/{tile_id}/review/reject:
+    post:
+      tags: [review]
+      summary: 검수 거부
+      operationId: reviewReject
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/datasetId"
+        - $ref: "#/components/parameters/tileId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                comment:
+                  type: string
+      responses:
+        "200":
+          description: 거부 처리됨
+
+  /api/tenants/{tenant_id}/exports/{export_id}/status:
+    get:
+      tags: [exports]
+      summary: export 작업 상태
+      operationId: getExportStatus
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - name: export_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 상태 placeholder
+
+  /api/tenants/{tenant_id}/exports/{export_id}/download:
+    get:
+      tags: [exports]
+      summary: export 결과 다운로드 (zip 등)
+      operationId: downloadExport
+      parameters:
+        - $ref: "#/components/parameters/tenantId"
+        - name: export_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 바이너리
+
+components:
+  parameters:
+    tenantId:
+      name: tenant_id
+      in: path
+      required: true
+      schema:
+        type: string
+    datasetId:
+      name: dataset_id
+      in: path
+      required: true
+      schema:
+        type: string
+    tileId:
+      name: tile_id
+      in: path
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    SamModelVariant:
+      type: string
+      enum:
+        - hiera_large
+        - hiera_base
+      description: |
+        backend/app/core/config_schema.py 의 SamConfig.model_variant Literal 과 동기화.
+        새 값 추가 시 OpenAPI·YAML·README 동시 갱신.
+
+    TilingConfig:
+      type: object
+      required: [tile_size, tile_overlap, nodata_skip_threshold, edge_padding_strategy]
+      properties:
+        tile_size: { type: integer, minimum: 128, maximum: 4096 }
+        tile_overlap: { type: integer, minimum: 0 }
+        nodata_skip_threshold: { type: number, minimum: 0, maximum: 1 }
+        edge_padding_strategy:
+          type: string
+          enum: [zero, reflect, drop]
+
+    GeoConfig:
+      type: object
+      properties:
+        expected_gsd_cm: { type: number, exclusiveMinimum: 0 }
+        gsd_tolerance: { type: number, minimum: 0 }
+        manual_gsd_cm: { type: number, nullable: true }
+        default_crs: { type: string }
+
+    GridConfig:
+      type: object
+      properties:
+        size_meters: { type: number, exclusiveMinimum: 0 }
+        origin:
+          type: string
+          enum: [source_image_top_left, geo_origin, tile_top_left]
+
+    SamConfig:
+      type: object
+      properties:
+        model_variant:
+          $ref: "#/components/schemas/SamModelVariant"
+        multimask_output: { type: boolean }
+        max_candidates: { type: integer, minimum: 1, maximum: 16 }
+
+    MaskClassDefinition:
+      type: object
+      required: [id, name, color]
+      properties:
+        id: { type: integer, minimum: 0, maximum: 255 }
+        name: { type: string }
+        color:
+          type: string
+          pattern: "^#[0-9A-Fa-f]{6}$"
+
+    ClassesConfig:
+      type: object
+      properties:
+        schema_version: { type: string }
+        definitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/MaskClassDefinition"
+
+    SplitRatio:
+      type: object
+      required: [train, val, test]
+      properties:
+        train: { type: number }
+        val: { type: number }
+        test: { type: number }
+
+    DatasetConfig:
+      type: object
+      properties:
+        output_root: { type: string }
+        split_ratio:
+          $ref: "#/components/schemas/SplitRatio"
+        image_format: { type: string, enum: [png] }
+        mask_format: { type: string, enum: [png] }
+
+    LabelingConfig:
+      type: object
+      required: [tiling, geo, grid, sam, classes, dataset]
+      properties:
+        tiling:
+          $ref: "#/components/schemas/TilingConfig"
+        geo:
+          $ref: "#/components/schemas/GeoConfig"
+        grid:
+          $ref: "#/components/schemas/GridConfig"
+        sam:
+          $ref: "#/components/schemas/SamConfig"
+        classes:
+          $ref: "#/components/schemas/ClassesConfig"
+        dataset:
+          $ref: "#/components/schemas/DatasetConfig"
+
+    SamPointPrompt:
+      type: object
+      required: [type, x, y, label]
+      properties:
+        type: { type: string, enum: [point] }
+        x: { type: integer }
+        y: { type: integer }
+        label: { type: string, enum: [positive, negative] }
+
+    SamBoxPrompt:
+      type: object
+      required: [type, x1, y1, x2, y2]
+      properties:
+        type: { type: string, enum: [box] }
+        x1: { type: integer }
+        y1: { type: integer }
+        x2: { type: integer }
+        y2: { type: integer }
+
+    SamPredictRequest:
+      type: object
+      properties:
+        prompts:
+          type: array
+          items:
+            oneOf:
+              - $ref: "#/components/schemas/SamPointPrompt"
+              - $ref: "#/components/schemas/SamBoxPrompt"
+        multimask_output: { type: boolean }
+
+    ClassMaskRLE:
+      type: object
+      required: [height, width, counts]
+      properties:
+        height: { type: integer }
+        width: { type: integer }
+        counts:
+          type: string
+          description: |
+            value:run_len 쌍을 쉼표로 연결 (행 우선 평탄화). 예: "0:5,255:3".
+            COCO 압축 RLE와는 다름 — Step 2 구현 포맷.
+
+    AnnotationSaveRequest:
+      type: object
+      properties:
+        status: { type: string }
+        mask_encoding: { type: string, enum: [rle] }
+        class_mask:
+          $ref: "#/components/schemas/ClassMaskRLE"

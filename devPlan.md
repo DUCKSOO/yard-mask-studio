@@ -4,19 +4,19 @@ overview: labeling-tool-plan-v3.md 기반으로, 현재 빈 레포에서 MVP(Pha
 todos:
   - id: step0-env
     content: "Step 0: pyproject.toml, frontend/package.json, 디렉토리 골격, .env 구성"
-    status: pending
+    status: completed
   - id: step1-spec
     content: "Step 1: config/labeling.dev.yaml, config_schema.py, dataset_spec.md, api_spec.yaml, labeling_guide.md"
-    status: pending
+    status: completed
   - id: step2-backend
     content: "Step 2: 백엔드 핵심 모듈 구현 (설정계층 → 타일링 → 그리드 → SAM → Annotation → API + 테스트)"
-    status: pending
+    status: completed
   - id: step3-cli
     content: "Step 3: CLI 엔드-투-엔드 검증 (GeoTIFF → 타일 → SAM → mask PNG)"
-    status: pending
+    status: completed
   - id: step4-frontend
     content: "Step 4: 프론트엔드 MVP (TileViewer, MaskCanvas, GridOverlay, undo/redo)"
-    status: pending
+    status: completed
   - id: step5-export
     content: "Step 5: Export + U-Net dataloader smoke test"
     status: pending
@@ -30,7 +30,7 @@ isProject: false
 
 ## 현재 상태
 
-레포에 `.env.example`, `.gitignore`, `README.md`, `labeling-tool-plan-v3.md`만 존재. 코드 없음.
+Step 0~4: 환경·기준 YAML·백엔드 핵심·CLI 스모크·프론트 MVP(타일 뷰어·마스크·그리드·저장/undo)까지 반영. Step 5(Export) 이후 진행.
 
 ---
 

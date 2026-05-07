@@ -11,8 +11,16 @@ node_modules/
 frontend/dist/
 frontend/.vite/
 
-# 데이터 (대용량 바이너리 제외)
-data/
+# 데이터 (대용량·런타임 산출물 제외) — 원본 GeoTIFF 투입 경로 골격만 추적
+/data/*
+!/data/source/
+/data/source/*
+!/data/source/default/
+/data/source/default/*
+!/data/source/default/raw_geotiff/
+/data/source/default/raw_geotiff/*
+!/data/source/default/raw_geotiff/.gitkeep
+
 models/
 
 # 환경변수

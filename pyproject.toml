@@ -16,6 +16,8 @@ dependencies = [
     "rasterio>=1.4",
     "sqlalchemy>=2.0",
     "torch>=2.5",
+    "pillow>=11.0",
+    "numpy>=2.0",
 ]
 
 [dependency-groups]

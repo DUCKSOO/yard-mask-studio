@@ -1,0 +1,44 @@
+# 운영 환경 시드 — APP_ENV=prod 일 때 LABELING_CONFIG_PATH 로 지정. git 커밋 대상.
+# tiling/geo/grid/sam/classes 는 dev와 동일하게 두고, 출력 경로만 분리하는 예시.
+tiling:
+  tile_size: 1024
+  tile_overlap: 128
+  nodata_skip_threshold: 0.8
+  edge_padding_strategy: "zero"
+
+geo:
+  expected_gsd_cm: 2.0
+  gsd_tolerance: 0.5
+  manual_gsd_cm: null
+  default_crs: "EPSG:5186"
+
+grid:
+  size_meters: 15.0
+  origin: "source_image_top_left"
+
+sam:
+  model_variant: "hiera_large"
+  multimask_output: true
+  max_candidates: 3
+
+classes:
+  schema_version: "1.0"
+  definitions:
+    - id: 0
+      name: "non_occupied"
+      color: "#000000"
+    - id: 1
+      name: "occupied"
+      color: "#FF0000"
+    - id: 255
+      name: "ignore"
+      color: "#808080"
+
+dataset:
+  output_root: "data/exports_prod"
+  split_ratio:
+    train: 0.7
+    val: 0.15
+    test: 0.15
+  image_format: "png"
+  mask_format: "png"

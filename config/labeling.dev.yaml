@@ -1,0 +1,43 @@
+# 개발 환경 시드 — 서버 첫 실행 시 DB로 import (이후 DB 우선). git 커밋 대상.
+tiling:
+  tile_size: 1024
+  tile_overlap: 128
+  nodata_skip_threshold: 0.8
+  edge_padding_strategy: "zero" # zero | reflect | drop
+
+geo:
+  expected_gsd_cm: 2.0
+  gsd_tolerance: 0.5
+  manual_gsd_cm: null
+  default_crs: "EPSG:5186"
+
+grid:
+  size_meters: 15.0
+  origin: "source_image_top_left" # source_image_top_left | geo_origin | tile_top_left
+
+sam:
+  model_variant: "hiera_large" # hiera_large | hiera_base — Literal은 config_schema.py와 동기화
+  multimask_output: true
+  max_candidates: 3
+
+classes:
+  schema_version: "1.0"
+  definitions:
+    - id: 0
+      name: "non_occupied"
+      color: "#000000"
+    - id: 1
+      name: "occupied"
+      color: "#FF0000"
+    - id: 255
+      name: "ignore"
+      color: "#808080"
+
+dataset:
+  output_root: "data/exports"
+  split_ratio:
+    train: 0.7
+    val: 0.15
+    test: 0.15
+  image_format: "png"
+  mask_format: "png"

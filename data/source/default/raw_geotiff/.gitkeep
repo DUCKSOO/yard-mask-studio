@@ -1,0 +1,3 @@
+# GeoTIFF 원본(.tif / .tiff)을 이 디렉터리에 둡니다.
+# 데이터셋 생성 시 source_geotiff 에는 여기서의 파일명만 지정합니다 (경로 제외).
+# 다른 테넌트: data/source/<tenant_id>/raw_geotiff/ 동일 구조로 추가하면 됩니다.

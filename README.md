@@ -20,6 +20,23 @@ SAM 2.1로 mask 후보를 제안하고, 작업자가 확정한 뒤 class index m
 
 ---
 
+## SAM 모델 추가 방법
+
+허용 **백본 variant** 는 코드·설정·OpenAPI에서 동일한 목록으로 관리한다: `hiera_large` (기본, 고성능·고메모리), `hiera_base` (경량).
+
+1. **체크포인트**를 레포의 `models/` 에 둔다 (`models/` 는 `.gitignore` 대상).  
+   - 수동: [facebookresearch/sam2](https://github.com/facebookresearch/sam2) 의 `checkpoints/download_ckpts.sh` 와 동일한 Meta CDN URL에서 받는다.  
+   - 스크립트: 저장소 루트에서 `uv run python scripts/download_sam_checkpoint.py --variant hiera_large`  
+     (선택) `--with-config` 로 같은 디렉터리에 `sam2.1_hiera_l.yaml` 등 설정 YAML도 받을 수 있다. `hiera_base` 는 `sam2.1_hiera_base_plus.pt` + `sam2.1_hiera_b+.yaml` 에 대응한다.
+2. `.env` 의 `SAM_CHECKPOINT_PATH` 를 그 `.pt` 파일의 **절대 경로**로 맞춘다. `SAM_MODEL_CFG` 는 사용 중인 variant에 맞게 둔다 (예: large → `sam2.1_hiera_l.yaml`, base → `sam2.1_hiera_b+.yaml`).
+3. 새 아키텍처 이름을 쓰려면 다음을 **한 세트로** 갱신한다.  
+   - [`backend/app/core/config_schema.py`](backend/app/core/config_schema.py) — `SamModelVariant` / `SamConfig.model_variant` 의 `Literal` 에 값 추가 (모듈 상단 독스트링 절차 참고).  
+   - [`config/labeling.dev.yaml`](config/labeling.dev.yaml), [`config/labeling.prod.yaml`](config/labeling.prod.yaml) — `sam.model_variant` 주석·값.  
+   - [`docs/api_spec.yaml`](docs/api_spec.yaml) — `components/schemas/SamModelVariant` 의 `enum`.  
+4. `uv run pytest` 로 설정 스키마 테스트가 통과하는지 확인한다.
+
+---
+
 ## 사전 요구 사항
 
 | 도구 | 용도 |
@@ -79,6 +96,15 @@ uv run uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
 - 위 `uv run uvicorn ...` 는 **`.venv`에 설치된 `uvicorn`** 으로 서버가 뜬다. 전역 Python이 아니다.
 - 가상환경을 수동으로 활성화한 뒤에는 같은 디렉터리에서 `uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000` 만 실행해도 동일하다.
 
+**백엔드 파이프라인 스모크 (Step 3)** — 합성 GeoTIFF로 타일 생성·메타데이터·(stub) SAM·mask PNG까지 확인할 때 (저장소 루트에서):
+
+```bash
+uv run python -m backend.scripts.cli make-geotiff data/source/default/raw_geotiff/synthetic.tif
+uv run python -m backend.scripts.cli e2e --synthetic --tile-size 512 --dataset-id step3_demo
+```
+
+SAM 본추론은 미연동이므로 기본은 `StubSegmentationBackend` 이다. 시각적 마스크가 필요하면 `e2e` 에 `--disk-mask` 를 붙인다. 별도 DB로 돌리려면 `--database-url sqlite:///./data/step3_cli.db` 처럼 지정한다. 같은 `--dataset-id` 로 재실행하면 데이터셋 중복 오류가 나므로 ID를 바꾸거나 DB를 비운다.
+
 ### 3. 프론트엔드 (Vite)
 
 별도 터미널에서:
@@ -90,6 +116,9 @@ pnpm dev
 ```
 
 - 개발 서버 기본 주소: [http://localhost:5173](http://localhost:5173)
+- **`pnpm dev`는 `/api`를 `http://127.0.0.1:8000`으로 프록시**하므로, 위 백엔드를 먼저 띄운 뒤 접속한다.
+- 기본 테넌트·데이터셋은 `default` / `step3_e2e` (Step 3 CLI로 만든 예시). 바꾸려면 사이드바 입력 또는 `.env`에 `VITE_TENANT_ID`, `VITE_DATASET_ID` 를 둔다.
+- 프록시 없이 빌드 미리보기 등에서 API를 직접 부를 때는 `VITE_API_BASE_URL=http://127.0.0.1:8000` 을 설정한다 (백엔드에 CORS가 없으면 개발 시 프록시 사용 권장).
 
 ### 4. 프로덕션 빌드 (프론트)
 
@@ -148,29 +177,28 @@ yard-mask-studio/
 │   │
 │   ├── tests/
 │   └── scripts/
-│       └── cli.py                  # CLI 검증 도구
+│       ├── cli.py                  # Step 3 e2e (타일·stub SAM·mask)
+│       └── make_test_geotiff.py    # 합성 GeoTIFF
 │
 ├── frontend/                       # React + TypeScript
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── TileViewer.tsx      # 타일 zoom/pan (Konva)
-│   │   │   ├── MaskCanvas.tsx      # mask 편집 캔버스
-│   │   │   ├── ClassPanel.tsx      # occupied/ignore 토글
-│   │   │   ├── ToolBar.tsx
-│   │   │   ├── TileNavigator.tsx   # 타일 목록·상태 필터
-│   │   │   ├── ReviewPanel.tsx     # 검수 승인/거부
+│   │   │   ├── TileViewer.tsx      # 타일 이미지 (Konva)
+│   │   │   ├── MaskCanvas.tsx      # mask 오버레이·브러시
+│   │   │   ├── ClassPanel.tsx      # 클래스 선택
+│   │   │   ├── ToolBar.tsx         # 도구·SAM 실행
 │   │   │   └── GridOverlay.tsx     # 그리드 시각화
 │   │   ├── api/
 │   │   │   └── client.ts           # axios + zod API 클라이언트
 │   │   └── stores/
-│   │       ├── annotationStore.ts  # mask 상태 + undo/redo 히스토리
-│   │       └── configStore.ts      # 서버 설정 동기화
+│   │       ├── annotationStore.tsx # mask + undo/redo (20)
+│   │       └── configStore.tsx     # 서버 설정 동기화
 │   ├── package.json
 │   └── vite.config.ts
 │
 ├── config/
-│   ├── labeling.dev.yaml           # 개발 환경 시드 (git 커밋)
-│   └── labeling.prod.yaml          # 운영 환경 시드 (git 커밋)
+│   ├── labeling.dev.yaml           # 개발 시드 (LABELING_CONFIG_PATH 기본값)
+│   └── labeling.prod.yaml          # 운영 시드 (APP_ENV=prod 등에서 지정)
 │
 ├── data/                           # git에서 제외 (.gitignore)
 │   ├── source/                     # 원본 GeoTIFF
@@ -182,7 +210,8 @@ yard-mask-studio/
 │   └── (SAM 체크포인트)
 │
 ├── docs/
-│   ├── labeling_guide.md           # 라벨링 기준표 (시각 예시 포함)
+│   ├── assets/                     # 라벨링 가이드 시각 예시 (추가 예정)
+│   ├── labeling_guide.md           # 라벨링 기준표
 │   ├── api_spec.yaml               # OpenAPI 3.0 스펙
 │   ├── dataset_spec.md             # 데이터셋 구조·export 규칙
 │   └── config_guide.md             # 설정 변경 가이드
@@ -201,7 +230,7 @@ yard-mask-studio/
 | 계층 | 위치 | 설명 |
 |---|---|---|
 | 환경 의존 (비밀·경로) | `.env` | DB URL, 체크포인트 절대경로 등. 서버 시작 시 고정 |
-| 운영 고정값 (시드) | `config/labeling.yaml` | 첫 실행 시 DB로 import. 이후 DB 우선 |
+| 운영 고정값 (시드) | `config/labeling.dev.yaml`, `config/labeling.prod.yaml` | 첫 실행 시 DB로 import. 이후 DB `active_config` 우선 (`.env`의 `LABELING_CONFIG_PATH`로 파일 선택) |
 | 런타임 변경 가능 | SQLite `active_config` | `POST /api/config`로 즉시 반영. 변경 전 값은 스냅샷 보존 |
 
 ---
@@ -266,7 +295,7 @@ data/
 ## 관련 문서
 
 - [설계 계획서](./labeling-tool-plan-v3.md)
-- [라벨링 기준표](./docs/labeling_guide.md) _(Phase 0에서 작성)_
-- [API 스펙](./docs/api_spec.yaml) _(Phase 0에서 작성)_
-- [데이터셋 명세](./docs/dataset_spec.md) _(Phase 0에서 작성)_
-- [설정 변경 가이드](./docs/config_guide.md) _(Phase 0에서 작성)_
+- [라벨링 기준표](./docs/labeling_guide.md)
+- [API 스펙](./docs/api_spec.yaml)
+- [데이터셋 명세](./docs/dataset_spec.md)
+- [설정 변경 가이드](./docs/config_guide.md)
