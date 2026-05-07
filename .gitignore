@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+.uv/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# 데이터 (대용량 바이너리 제외)
+data/
+models/
+
+# 환경변수
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SQLite DB (런타임 생성)
+*.db
+*.db-shm
+*.db-wal
