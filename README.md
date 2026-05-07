@@ -20,6 +20,89 @@ SAM 2.1로 mask 후보를 제안하고, 작업자가 확정한 뒤 class index m
 
 ---
 
+## 사전 요구 사항
+
+| 도구 | 용도 |
+|------|------|
+| [uv](https://docs.astral.sh/uv/) | Python 3.11 고정, 가상환경 생성·의존성 설치 |
+| [pnpm](https://pnpm.io/) | 프론트엔드 패키지 설치 및 개발 서버 |
+
+Python 버전은 **별도로 설치할 필요 없음**. `uv sync`가 프로젝트에 맞는 CPython 3.11을 받아 `.venv`에 둡니다.
+
+---
+
+## Python 가상환경 (uv)
+
+1. 저장소 루트에서 한 번만 의존성을 맞춘다.
+
+   ```bash
+   uv sync --group dev
+   ```
+
+2. 위 명령이 프로젝트 루트에 **`.venv`** 디렉터리를 만들고, `pyproject.toml` 기준으로 패키지를 설치한다. (`.venv`는 `.gitignore`에 포함됨.)
+
+3. **권장**: 가상환경을 셸에서 `activate` 하지 않고, 루트에서 `uv run <명령>`으로 실행한다. **`uv run`은 프로젝트의 `.venv` 안의 Python·설치된 패키지로 그 명령을 구동**한다. 즉 “시스템 전역 Python”이 아니라 **`uv sync`로 만든 가상환경과 동일한 환경**이다. (매번 활성화만 생략하는 방식.)
+
+4. **선택**: IDE 터미널이나 스크립트에서 가상환경을 활성화해 쓰려면 다음과 같다.
+
+   - **Windows (PowerShell)**  
+     `.\.venv\Scripts\Activate.ps1`
+   - **Windows (cmd)**  
+     `.\.venv\Scripts\activate.bat`
+   - **macOS / Linux**  
+     `source .venv/bin/activate`
+
+   활성화 후에는 `python`, `pytest`, `uvicorn` 등을 일반 명령처럼 실행할 수 있다. (비활성화: `deactivate`)
+
+---
+
+## 실행 방법
+
+### 1. 환경 변수
+
+```bash
+cp .env.example .env
+```
+
+`.env`에서 최소한 `SAM_CHECKPOINT_PATH`(로컬 절대 경로), 필요 시 `DATABASE_URL`·`LABELING_CONFIG_PATH`를 맞춘다. `.env`는 git에 올리지 않는다.
+
+### 2. 백엔드 (FastAPI)
+
+저장소 **루트**에서:
+
+```bash
+uv sync --group dev
+uv run uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+- API 문서: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- 위 `uv run uvicorn ...` 는 **`.venv`에 설치된 `uvicorn`** 으로 서버가 뜬다. 전역 Python이 아니다.
+- 가상환경을 수동으로 활성화한 뒤에는 같은 디렉터리에서 `uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000` 만 실행해도 동일하다.
+
+### 3. 프론트엔드 (Vite)
+
+별도 터미널에서:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+
+- 개발 서버 기본 주소: [http://localhost:5173](http://localhost:5173)
+
+### 4. 프로덕션 빌드 (프론트)
+
+```bash
+cd frontend
+pnpm install
+pnpm run build
+```
+
+산출물은 `frontend/dist/` 에 생성된다.
+
+---
+
 ## 레포 구조
 
 ```
@@ -123,23 +206,35 @@ yard-mask-studio/
 
 ---
 
-## 빠른 시작
+## Step 0 완료 검증
 
 ```bash
-# 환경변수 설정
-cp .env.example .env
-# 편집: DATABASE_URL, SAM_CHECKPOINT_PATH
+# Python (FastAPI, rasterio, torch 임포트)
+uv sync --group dev
+uv run python -c "import fastapi, rasterio, torch"
+uv run pytest
 
-# Python 의존성 (uv)
-uv sync
-
-# 서버 실행
-uv run uvicorn backend.app.main:app --reload
-
-# 프론트엔드
+# 프론트엔드 빌드
 cd frontend
 pnpm install
-pnpm dev
+pnpm run build
+pnpm run test
+```
+
+---
+
+## 빠른 시작 (요약)
+
+자세한 설명은 위 **Python 가상환경 (uv)** 절과 **실행 방법** 절을 참고한다.
+
+```bash
+cp .env.example .env   # 후에 SAM_CHECKPOINT_PATH 등 수정
+
+uv sync --group dev
+uv run uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
+
+# 다른 터미널
+cd frontend && pnpm install && pnpm dev
 ```
 
 ---
