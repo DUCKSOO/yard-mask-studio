@@ -8,27 +8,29 @@ import { AnnotationProvider } from "./stores/annotationStore";
 import { ConfigProvider } from "./stores/configStore";
 
 const DEFAULT_TENANT = import.meta.env.VITE_TENANT_ID ?? "default";
-const DEFAULT_DATASET = import.meta.env.VITE_DATASET_ID ?? "step3_e2e";
+const DATASET_ID_FROM_ENV = import.meta.env.VITE_DATASET_ID;
+const initialDatasetId =
+  typeof DATASET_ID_FROM_ENV === "string" && DATASET_ID_FROM_ENV.trim() !== ""
+    ? DATASET_ID_FROM_ENV.trim()
+    : "";
 
 function AppShell() {
   const [page, setPage] = useState<AppPage>("datasets");
-  const [tenantId, setTenantId] = useState(DEFAULT_TENANT);
-  const [datasetId, setDatasetId] = useState(DEFAULT_DATASET);
+  const [tenantId] = useState(DEFAULT_TENANT);
+  const [datasetId, setDatasetId] = useState(initialDatasetId);
 
   return (
     <div className="app-shell">
       <header className="app-header app-header-shell">
         <h1>yard-mask-studio</h1>
       </header>
-      <NavBar page={page} onPage={setPage} tenantId={tenantId} datasetId={datasetId} />
+      <NavBar page={page} onPage={setPage} datasetId={datasetId} />
       {page === "datasets" ? (
         <DatasetsPage
           tenantId={tenantId}
-          onTenantChange={setTenantId}
           selectedDatasetId={datasetId}
           onSelectDataset={setDatasetId}
-          onGoToLabeling={(t, d) => {
-            setTenantId(t);
+          onGoToLabeling={(d) => {
             setDatasetId(d);
             setPage("labeling");
           }}

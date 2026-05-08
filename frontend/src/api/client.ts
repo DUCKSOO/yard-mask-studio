@@ -163,6 +163,7 @@ const DatasetListItemSchema = z.object({
   config_snapshot_id: z.number(),
   source_geotiff: z.string().nullable(),
   created_at: z.string(),
+  tile_count: z.number(),
 });
 
 export type DatasetListItem = z.infer<typeof DatasetListItemSchema>;
@@ -170,6 +171,50 @@ export type DatasetListItem = z.infer<typeof DatasetListItemSchema>;
 export async function listDatasets(tenantId: string): Promise<DatasetListItem[]> {
   const { data } = await api.get(`/api/tenants/${tenantId}/datasets`);
   return z.array(DatasetListItemSchema).parse(data);
+}
+
+export async function deleteDataset(tenantId: string, datasetId: string): Promise<void> {
+  await api.delete(`/api/tenants/${tenantId}/datasets/${encodeURIComponent(datasetId)}`);
+}
+
+export async function deleteGeotiff(tenantId: string, filename: string): Promise<void> {
+  await api.delete(`/api/tenants/${tenantId}/uploads/geotiff/${encodeURIComponent(filename)}`);
+}
+
+const GeotiffListItemSchema = z.object({
+  filename: z.string(),
+  size: z.number(),
+  mtime: z.string(),
+});
+
+export type GeotiffListItem = z.infer<typeof GeotiffListItemSchema>;
+
+const GeotiffUploadResponseSchema = z.object({
+  filename: z.string(),
+  size: z.number(),
+});
+
+export async function listGeotiffs(tenantId: string): Promise<GeotiffListItem[]> {
+  const { data } = await api.get(`/api/tenants/${tenantId}/uploads/geotiff`);
+  return z.array(GeotiffListItemSchema).parse(data);
+}
+
+export async function uploadGeotiff(
+  tenantId: string,
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<{ filename: string; size: number }> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const { data } = await api.post(`/api/tenants/${tenantId}/uploads/geotiff`, fd, {
+    timeout: 600_000,
+    onUploadProgress: (ev) => {
+      if (ev.total && onProgress) {
+        onProgress(Math.round((ev.loaded / ev.total) * 100));
+      }
+    },
+  });
+  return GeotiffUploadResponseSchema.parse(data);
 }
 
 export async function createDataset(

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Body, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request, Response
 
 from backend.app.api.route_params import DatasetId, TenantId
 from backend.app.api.schemas import DatasetCreateRequest, TileGenerateRequest
@@ -64,20 +64,47 @@ def create_dataset(
     return {"dataset_id": row.dataset_id, "id": row.id, "config_snapshot_id": row.config_snapshot_id}
 
 
+@router.delete(
+    "/{dataset_id}",
+    status_code=204,
+    summary="데이터셋 삭제",
+    description="""
+데이터셋과 연결된 타일·어노테이션·검수 큐·export 레코드를 제거하고,
+`data/datasets/{tenant}/{dataset}/` 및 `data/exports/{tenant}/{dataset}/` 디렉터리를 삭제합니다.
+""",
+)
+def delete_dataset_route(
+    tenant_id: TenantId,
+    dataset_id: DatasetId,
+    request: Request,
+    db: DbSession,
+) -> Response:
+    _tenant(request, tenant_id)
+    repo_root: Path = request.app.state.repo_root
+    try:
+        dataset_service.delete_dataset(db, repo_root, tenant_id, dataset_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="dataset not found") from None
+    logger.info("dataset deleted tenant=%s dataset_id=%s", tenant_id, dataset_id)
+    return Response(status_code=204)
+
+
 @router.get(
     "",
     summary="데이터셋 목록",
-    description="테넌트에 속한 데이터셋 요약(`dataset_id`, 스냅샷 id, 원본 파일명, 생성 시각)을 반환합니다.",
+    description="테넌트에 속한 데이터셋 요약(`dataset_id`, 스냅샷 id, 원본 파일명, 생성 시각, **tile_count**)을 반환합니다.",
 )
 def list_datasets(tenant_id: TenantId, request: Request, db: DbSession) -> list[dict]:
     _tenant(request, tenant_id)
     rows = dataset_service.list_datasets(db, tenant_id)
+    counts = dataset_service.tile_count_map(db, tenant_id)
     return [
         {
             "dataset_id": r.dataset_id,
             "config_snapshot_id": r.config_snapshot_id,
             "source_geotiff": r.source_geotiff,
             "created_at": r.created_at,
+            "tile_count": counts.get(r.dataset_id, 0),
         }
         for r in rows
     ]

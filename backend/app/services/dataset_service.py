@@ -4,16 +4,24 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config_schema import LabelingConfig
-from backend.app.core.db import DatasetConfigSnapshotRow, DatasetRow
+from backend.app.core.db import (
+    AnnotationRow,
+    DatasetConfigSnapshotRow,
+    DatasetRow,
+    ExportRow,
+    ReviewQueueRow,
+    TileRow,
+)
 from backend.app.core.config_store import load_active_config
 from backend.app.tiling.coordinate_utils import gsd_cm_from_geotransform
 from backend.app.tiling.raster_source import GeoTiffRasterSource
@@ -72,6 +80,53 @@ def list_datasets(session: Session, tenant_id: str) -> list[DatasetRow]:
     return list(session.scalars(stmt))
 
 
+def tile_count_map(session: Session, tenant_id: str) -> dict[str, int]:
+    rows = session.execute(
+        select(TileRow.dataset_id, func.count()).where(TileRow.tenant_id == tenant_id).group_by(TileRow.dataset_id)
+    ).all()
+    return {str(dataset_id): int(cnt) for dataset_id, cnt in rows}
+
+
+def delete_dataset(session: Session, repo_root: Path, tenant_id: str, dataset_id: str) -> None:
+    """데이터셋 DB 레코드·연관 타일/어노테이션·검수·export·디스크 폴더를 삭제합니다."""
+    dr = get_dataset(session, tenant_id, dataset_id)
+    if dr is None:
+        raise KeyError("dataset not found")
+
+    snap_id = dr.config_snapshot_id
+    session.execute(
+        delete(TileRow).where(TileRow.tenant_id == tenant_id, TileRow.dataset_id == dataset_id)
+    )
+    session.execute(
+        delete(AnnotationRow).where(
+            AnnotationRow.tenant_id == tenant_id,
+            AnnotationRow.dataset_id == dataset_id,
+        )
+    )
+    session.execute(
+        delete(ReviewQueueRow).where(
+            ReviewQueueRow.tenant_id == tenant_id,
+            ReviewQueueRow.dataset_id == dataset_id,
+        )
+    )
+    session.execute(
+        delete(ExportRow).where(ExportRow.tenant_id == tenant_id, ExportRow.dataset_id == dataset_id)
+    )
+    session.delete(dr)
+    snap = session.get(DatasetConfigSnapshotRow, snap_id)
+    if snap is not None:
+        session.delete(snap)
+    session.commit()
+
+    repo_root = repo_root.resolve()
+    ddir = dataset_dir(repo_root, tenant_id, dataset_id)
+    if ddir.is_dir():
+        shutil.rmtree(ddir)
+    exp_parent = repo_root / "data" / "exports" / tenant_id / dataset_id
+    if exp_parent.is_dir():
+        shutil.rmtree(exp_parent)
+
+
 def get_dataset_labeling_config(session: Session, tenant_id: str, dataset_id: str) -> LabelingConfig:
     dr = get_dataset(session, tenant_id, dataset_id)
     if dr is None:
@@ -82,8 +137,12 @@ def get_dataset_labeling_config(session: Session, tenant_id: str, dataset_id: st
     return LabelingConfig.model_validate_json(snap.config_json)
 
 
+def raw_geotiff_dir(repo_root: Path, tenant_id: str) -> Path:
+    return repo_root / "data" / "source" / tenant_id / "raw_geotiff"
+
+
 def raw_geotiff_path(repo_root: Path, tenant_id: str, filename: str) -> Path:
-    return repo_root / "data" / "source" / tenant_id / "raw_geotiff" / filename
+    return raw_geotiff_dir(repo_root, tenant_id) / filename
 
 
 def dataset_dir(repo_root: Path, tenant_id: str, dataset_id: str) -> Path:

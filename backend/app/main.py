@@ -64,6 +64,10 @@ app = FastAPI(
             "description": "데이터셋 등록 및 GeoTIFF로부터 타일 PNG 일괄 생성.",
         },
         {
+            "name": "uploads",
+            "description": "GeoTIFF 원본 파일 업로드 및 서버 `raw_geotiff/` 목록 조회.",
+        },
+        {
             "name": "tiles",
             "description": "생성된 타일 목록, PNG 이미지, 메타데이터(JSON), 상태 변경.",
         },

@@ -691,7 +691,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
         <strong>라벨링</strong>
         <span className="muted">
           {" "}
-          · 작업 대상 <code>{tenantId}</code> / <code>{datasetId || "—"}</code>
+          · 작업 데이터셋 <code>{datasetId || "—"}</code>
           {" · "}
           변경은 <strong>데이터셋</strong> 탭에서 하세요.
         </span>

@@ -3,7 +3,6 @@ export type AppPage = "datasets" | "labeling" | "review" | "export";
 type NavBarProps = {
   page: AppPage;
   onPage: (p: AppPage) => void;
-  tenantId: string;
   datasetId: string;
 };
 
@@ -14,7 +13,7 @@ const TABS: { id: AppPage; label: string }[] = [
   { id: "export", label: "Export" },
 ];
 
-export function NavBar({ page, onPage, tenantId, datasetId }: NavBarProps) {
+export function NavBar({ page, onPage, datasetId }: NavBarProps) {
   const noDataset = !datasetId.trim();
   return (
     <nav className="app-nav" aria-label="주요 화면">
@@ -35,11 +34,9 @@ export function NavBar({ page, onPage, tenantId, datasetId }: NavBarProps) {
           );
         })}
       </div>
-      <div className="app-nav-context" title="라벨링·Export·검수에 사용되는 작업 대상">
-        <span className="app-nav-context-label">작업 대상</span>
-        <code className="app-nav-context-value">
-          {tenantId} / {datasetId || "—"}
-        </code>
+      <div className="app-nav-context" title="라벨링·Export·검수에 사용되는 데이터셋">
+        <span className="app-nav-context-label">선택 데이터셋</span>
+        <code className="app-nav-context-value">{datasetId || "—"}</code>
       </div>
     </nav>
   );
