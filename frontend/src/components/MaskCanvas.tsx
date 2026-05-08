@@ -76,6 +76,7 @@ export function MaskCanvas(props: MaskCanvasProps) {
       opacity={1}
       onMouseDown={(e) => {
         if (!listening) return;
+        if (e.evt.button !== 0) return;
         const pos = e.target.getRelativePointerPosition();
         if (pos) {
           onPaintStart?.(pos.x, pos.y);
@@ -83,14 +84,15 @@ export function MaskCanvas(props: MaskCanvasProps) {
       }}
       onMouseMove={(e) => {
         if (!listening) return;
-        if (e.evt.buttons === 0) return;
+        if ((e.evt.buttons & 1) === 0) return;
         const pos = e.target.getRelativePointerPosition();
         if (pos) {
           onPaintMove?.(pos.x, pos.y);
         }
       }}
-      onMouseUp={() => {
+      onMouseUp={(e) => {
         if (!listening) return;
+        if (e.evt.button !== 0) return;
         onPaintEnd?.();
       }}
       onMouseLeave={() => {
