@@ -79,6 +79,21 @@ class AnnotationRow(Base):
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class ExportRow(Base):
+    """U-Net export 작업 레지스트리."""
+
+    __tablename__ = "exports"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(Text, nullable=False)
+    dataset_id: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    export_path: Mapped[str] = mapped_column(Text, nullable=False)
+    sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 def init_db(engine) -> None:
     Base.metadata.create_all(bind=engine)
 

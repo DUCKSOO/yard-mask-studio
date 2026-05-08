@@ -74,8 +74,12 @@ app = FastAPI(
             "description": "확정 클래스 마스크(RLE) 저장·조회·삭제 및 `masks/{tile_id}.png` 동기화.",
         },
         {
+            "name": "exports",
+            "description": "U-Net 학습용 export 생성 결과 조회 및 ZIP 다운로드.",
+        },
+        {
             "name": "stubs",
-            "description": "Step 5~6 예정 기능. 현재는 501 Not Implemented.",
+            "description": "Step 6 예정(검수 큐 등). 현재는 501 Not Implemented.",
         },
     ],
 )

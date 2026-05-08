@@ -8,6 +8,7 @@ from fastapi import APIRouter, Body, HTTPException, Request
 
 from backend.app.api.route_params import DatasetId, TenantId
 from backend.app.api.schemas import DatasetCreateRequest, TileGenerateRequest
+from backend.app.dataset.dataset_exporter import export_unet_dataset
 from backend.app.core.config_schema import LabelingConfig
 from backend.app.core.tenant import assert_tenant_allowed
 from backend.app.deps import DbSession
@@ -150,13 +151,29 @@ def generate_tiles(
 
 @router.post(
     "/{dataset_id}/export/unet",
-    summary="U-Net export (미구현)",
-    description="Step 5에서 구현 예정. 현재 **501**.",
+    summary="U-Net export",
+    description="""
+`status=labeled`인 annotation이 있고, 해당 타일의 `images/{tile_id}.png`·`masks/{tile_id}.png`가 모두 있을 때만 포함합니다.
+
+- 라벨된 샘플이 없으면 **400**.
+- 데이터셋이 없으면 **404**.
+- 산출물: `data/exports/{tenant}/{dataset}/{export_id}/` (images, masks, splits, manifest, config_snapshot.yaml, classes.json).
+""",
 )
-def export_unet_stub(
+def export_unet(
     tenant_id: TenantId,
     dataset_id: DatasetId,
     request: Request,
-) -> None:
+    db: DbSession,
+) -> dict:
     _tenant(request, tenant_id)
-    raise HTTPException(status_code=501, detail="Step 5: U-Net export not implemented")
+    repo_root: Path = request.app.state.repo_root
+    try:
+        export_id = export_unet_dataset(db, repo_root, tenant_id, dataset_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="dataset not found") from None
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    return {"export_id": export_id}

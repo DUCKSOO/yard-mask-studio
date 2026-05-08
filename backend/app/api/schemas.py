@@ -88,3 +88,15 @@ class TileStatusPatch(BaseModel):
         description="바꿀 타일 상태. 예: `unlabeled`, `in_progress`, `labeled`, `skipped` 등.",
         examples=["labeled"],
     )
+
+
+class ExportUnetResponse(BaseModel):
+    export_id: str = Field(description="생성된 export 작업 UUID. `GET .../exports/{export_id}/status`에 사용.")
+
+
+class ExportStatusResponse(BaseModel):
+    status: str = Field(description="작업 상태. MVP는 완료 시 `done`만 사용.")
+    export_path: str = Field(description="레포 루트 기준 상대 경로(`data/exports/...`).")
+    sample_count: int = Field(description="export에 포함된 타일(샘플) 수.")
+    dataset_id: str = Field(description="원본 데이터셋 ID.")
+    tenant_id: str = Field(description="테넌트 ID.")

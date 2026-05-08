@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: step5-export
     content: "Step 5: Export + U-Net dataloader smoke test"
-    status: pending
+    status: completed
   - id: step6-full
     content: "Step 6: Phase 3~5 워크플로 확장 (brush, 검수 큐, 학습 연동)"
     status: pending
@@ -30,7 +30,7 @@ isProject: false
 
 ## 현재 상태
 
-Step 0~4: 환경·기준 YAML·백엔드 핵심·CLI 스모크·프론트 MVP(타일 뷰어·마스크·그리드·저장/undo)까지 반영. Step 5(Export) 이후 진행.
+Step 0~5: MVP(Export + U-Net dataloader smoke test)까지 반영. Step 6(워크플로 확장) 이후 진행.
 
 ---
 
