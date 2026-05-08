@@ -89,7 +89,7 @@ def save_annotation(
     mask_service.save_mask_png(mask_path, arr)
 
     now = datetime.now(UTC).isoformat()
-    payload = body.model_dump(mode="json")
+    payload = body.model_dump(mode="json", exclude_none=True)
     ann_json = json.dumps(payload, ensure_ascii=False)
 
     row = _annotation_row(db, tenant_id, dataset_id, tile_id)

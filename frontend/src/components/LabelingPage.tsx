@@ -93,8 +93,15 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   /** 현재 타일에 서버 저장 어노테이션 존재 여부 — 라벨 삭제 버튼 활성화용 */
   const [hasPersistedAnnotation, setHasPersistedAnnotation] = useState(false);
+  /** loadTileData가 현재 선택 타일용 마스크를 ann에 반영한 뒤에만 true로 간주 — UI 해상도 일치 */
+  const [maskSourceTileId, setMaskSourceTileId] = useState<string | null>(null);
 
   const [liveCells, setLiveCells] = useState<Uint8Array | null>(null);
+  /**
+   * 브러시 스트로크 버퍼 — React state(`liveCells`)는 mousedown 직후 mouseup까지
+   * 한 틱에 갱신되지 않을 수 있어, 커밋·저장은 이 ref를 기준으로 한다.
+   */
+  const liveCellsRef = useRef<Uint8Array | null>(null);
   /** 브러시 모드: 포인터 주변 페인트 영역 미리보기 (이미지 좌표) */
   const [brushCursor, setBrushCursor] = useState<{ x: number; y: number; eraser: boolean } | null>(null);
 
@@ -111,6 +118,11 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ w: 800, h: 560 });
   const viewRef = useRef<Konva.Group>(null);
+  /** 비동기 tile 로드 경합 방지 — 현재 선택된 tenant/dataset/tile 과 요청 시점이 일치하는지 검사 */
+  const loadTargetRef = useRef({ tenantId, datasetId, tileId: selectedTileId });
+  useEffect(() => {
+    loadTargetRef.current = { tenantId, datasetId, tileId: selectedTileId };
+  }, [tenantId, datasetId, selectedTileId]);
 
   const hasDataset = Boolean(datasetId.trim());
 
@@ -136,8 +148,10 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   );
   const htmlImage = useHtmlImage(imageUrl);
 
-  const iw = htmlImage ? htmlImage.naturalWidth : Number(meta.tile_size) || 512;
-  const ih = htmlImage ? htmlImage.naturalHeight : Number(meta.tile_size) || 512;
+  /** 마스크 배열·Konva 레이어 공통 픽셀 크기 — 로드된 이미지가 있으면 그 크기를 쓰고, 없으면 annState(서버·decode와 길이 일치), 마지막으로 meta */
+  const fallbackTilePx = Number(meta.tile_size) || 512;
+  const tilePixelW = htmlImage?.naturalWidth ?? annState?.width ?? fallbackTilePx;
+  const tilePixelH = htmlImage?.naturalHeight ?? annState?.height ?? fallbackTilePx;
 
   const colorMap = useMemo(() => {
     if (!config) {
@@ -153,6 +167,10 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   // selectedClassId는 occupied(1) 고정; UI 선택 없음
 
   const displayCells = liveCells ?? ann.current;
+
+  /** 현재 선택 타일에 맞게 loadTileData가 끝난 뒤에만 래스터 마스크 표시 — 해상도 불일치·경합 방지 */
+  const showRasterMask =
+    Boolean(displayCells && annState && maskSourceTileId === selectedTileId);
 
   const tileStats = useMemo(() => {
     const total = tiles.length;
@@ -258,6 +276,8 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
 
   useEffect(() => {
     brushLastPos.current = null;
+    liveCellsRef.current = null;
+    setLiveCells(null);
     setBrushCursor(null);
   }, [selectedTileId]);
 
@@ -272,26 +292,44 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   }, [reloadTiles]);
 
   const loadTileData = useCallback(async () => {
-    if (!hasDataset || !selectedTileId || !config) {
+    if (!hasDataset || !selectedTileId) {
       return;
     }
+    const req = { tenantId, datasetId, tileId: selectedTileId };
+    const stale = () => {
+      const c = loadTargetRef.current;
+      return (
+        c.tenantId !== req.tenantId || c.datasetId !== req.datasetId || c.tileId !== req.tileId
+      );
+    };
+    setMaskSourceTileId(null);
     setSamMessage(null);
     setStatusMsg(null);
     setLiveCells(null);
+    liveCellsRef.current = null;
     brushLastPos.current = null;
     setHasPersistedAnnotation(false);
     resetPromptsHistory();
     setPrompts([]);
     try {
       const m = await getTileMetadata(tenantId, datasetId, selectedTileId);
+      if (stale()) {
+        return;
+      }
       setMeta(m);
 
       const url = getTileImageUrl(tenantId, datasetId, selectedTileId);
       const { w, h } = await loadImageDimensions(url);
+      if (stale()) {
+        return;
+      }
       const tw = w;
       const th = h;
 
       const existing = await getAnnotation(tenantId, datasetId, selectedTileId);
+      if (stale()) {
+        return;
+      }
       setHasPersistedAnnotation(existing !== null);
       if (existing) {
         if (existing.class_mask.width !== tw || existing.class_mask.height !== th) {
@@ -316,10 +354,15 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
       } else {
         reset(tw, th);
       }
+      if (!stale()) {
+        setMaskSourceTileId(selectedTileId);
+      }
     } catch (e: unknown) {
-      setStatusMsg(e instanceof Error ? e.message : String(e));
+      if (!stale()) {
+        setStatusMsg(e instanceof Error ? e.message : String(e));
+      }
     }
-  }, [selectedTileId, tenantId, datasetId, config, reset, pushCellsWithSnapshot, hasDataset, resetPromptsHistory]);
+  }, [selectedTileId, tenantId, datasetId, reset, pushCellsWithSnapshot, hasDataset, resetPromptsHistory]);
 
   useEffect(() => {
     void loadTileData();
@@ -332,14 +375,27 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   }, [selectedTileId, tenantId, datasetId]);
 
   const handleSave = useCallback(async () => {
-    if (!hasDataset || !selectedTileId || !ann.current || !annState) {
+    if (!hasDataset || !selectedTileId || !annState) {
       return;
     }
     setStatusMsg(null);
     try {
       const w = annState.width;
       const h = annState.height;
-      const counts = encodeRleVl(ann.current, w, h);
+      let maskToEncode: Uint8Array | null = null;
+      const pendingStroke = liveCellsRef.current;
+      if (pendingStroke) {
+        pushCellsWithSnapshot(pendingStroke, prompts);
+        liveCellsRef.current = null;
+        setLiveCells(null);
+        maskToEncode = pendingStroke;
+      } else if (ann.current) {
+        maskToEncode = ann.current;
+      }
+      if (!maskToEncode) {
+        return;
+      }
+      const counts = encodeRleVl(maskToEncode, w, h);
       await saveAnnotation(tenantId, datasetId, selectedTileId, {
         status: "labeled",
         mask_encoding: "rle",
@@ -355,7 +411,17 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
       setStatusMsg(msg);
       logger.error("save failed", msg);
     }
-  }, [selectedTileId, ann, annState, tenantId, datasetId, hasDataset, reloadTiles, prompts]);
+  }, [
+    selectedTileId,
+    ann,
+    annState,
+    tenantId,
+    datasetId,
+    hasDataset,
+    reloadTiles,
+    prompts,
+    pushCellsWithSnapshot,
+  ]);
 
   const handleDeleteLabel = useCallback(async () => {
     if (!hasDataset || !selectedTileId) {
@@ -446,11 +512,11 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
         return null;
       }
       return {
-        x: clamp(Math.floor(p.x), 0, iw - 1),
-        y: clamp(Math.floor(p.y), 0, ih - 1),
+        x: clamp(Math.floor(p.x), 0, tilePixelW - 1),
+        y: clamp(Math.floor(p.y), 0, tilePixelH - 1),
       };
     },
-    [iw, ih],
+    [tilePixelW, tilePixelH],
   );
 
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
@@ -503,13 +569,13 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
       panDrag.current = { lastX: p.x, lastY: p.y };
       return;
     }
-    if (tool === "brush" && viewRef.current && iw > 0 && ih > 0) {
+    if (tool === "brush" && viewRef.current && tilePixelW > 0 && tilePixelH > 0) {
       const lp = viewRef.current.getRelativePointerPosition();
       if (!lp) {
         setBrushCursor(null);
         return;
       }
-      if (lp.x < 0 || lp.x > iw || lp.y < 0 || lp.y > ih) {
+      if (lp.x < 0 || lp.x > tilePixelW || lp.y < 0 || lp.y > tilePixelH) {
         setBrushCursor(null);
         return;
       }
@@ -645,12 +711,13 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     if (tool !== "brush" || !ann.current) {
       return;
     }
-    const nx = clamp(x, 0, iw - 1);
-    const ny = clamp(y, 0, ih - 1);
+    const nx = clamp(x, 0, tilePixelW - 1);
+    const ny = clamp(y, 0, tilePixelH - 1);
     const isEraser = Boolean(opts?.eraser);
     brushStrokeEraser.current = isEraser;
     const classId = isEraser ? 0 : selectedClassId;
-    const b = paintBrush(ann.current, iw, ih, nx, ny, brushRadius, classId);
+    const b = paintBrush(ann.current, tilePixelW, tilePixelH, nx, ny, brushRadius, classId);
+    liveCellsRef.current = b;
     setLiveCells(b);
     brushLastPos.current = { x: nx, y: ny };
   };
@@ -659,27 +726,41 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     if (tool !== "brush" || !liveCells) {
       return;
     }
-    const nx = clamp(x, 0, iw - 1);
-    const ny = clamp(y, 0, ih - 1);
+    const nx = clamp(x, 0, tilePixelW - 1);
+    const ny = clamp(y, 0, tilePixelH - 1);
     const classId = brushStrokeEraser.current ? 0 : selectedClassId;
     const last = brushLastPos.current;
     if (!last) {
       brushLastPos.current = { x: nx, y: ny };
-      setLiveCells((prev) => (prev ? paintBrush(prev, iw, ih, nx, ny, brushRadius, classId) : prev));
+      setLiveCells((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        const next = paintBrush(prev, tilePixelW, tilePixelH, nx, ny, brushRadius, classId);
+        liveCellsRef.current = next;
+        return next;
+      });
       return;
     }
-    setLiveCells((prev) =>
-      prev ? paintBrushStroke(prev, iw, ih, last.x, last.y, nx, ny, brushRadius, classId) : prev,
-    );
+    setLiveCells((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      const next = paintBrushStroke(prev, tilePixelW, tilePixelH, last.x, last.y, nx, ny, brushRadius, classId);
+      liveCellsRef.current = next;
+      return next;
+    });
     brushLastPos.current = { x: nx, y: ny };
   };
 
   const onMaskPaintEnd = () => {
     brushLastPos.current = null;
     brushStrokeEraser.current = false;
-    if (liveCells) {
-      pushCellsWithSnapshot(liveCells, prompts);
-      setLiveCells(null);
+    const stroke = liveCellsRef.current;
+    liveCellsRef.current = null;
+    setLiveCells(null);
+    if (stroke) {
+      pushCellsWithSnapshot(stroke, prompts);
     }
   };
 
@@ -843,13 +924,13 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
             >
               <Layer>
                 <Group ref={viewRef} x={pan.x} y={pan.y} scaleX={zoom} scaleY={zoom}>
-                  <TileImageLayer image={htmlImage} width={iw} height={ih} />
-                  <GridOverlay width={iw} height={ih} gridPixelX={pxX} gridPixelY={pxY} />
-                  {displayCells ? (
+                  <TileImageLayer image={htmlImage} width={tilePixelW} height={tilePixelH} />
+                  <GridOverlay width={tilePixelW} height={tilePixelH} gridPixelX={pxX} gridPixelY={pxY} />
+                  {showRasterMask && annState && displayCells ? (
                     <MaskCanvas
                       cells={displayCells}
-                      width={iw}
-                      height={ih}
+                      width={annState.width}
+                      height={annState.height}
                       colorMap={colorMap}
                       listening={tool === "brush"}
                       paintEraserMode={false}
@@ -875,8 +956,8 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
                   ) : null}
                   {showHitRect ? (
                     <Rect
-                      width={iw}
-                      height={ih}
+                      width={tilePixelW}
+                      height={tilePixelH}
                       fill="rgba(0,0,0,0)"
                       listening={!samBusy}
                       onMouseDown={hitRectMouseDown}

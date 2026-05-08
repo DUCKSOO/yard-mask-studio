@@ -132,7 +132,7 @@ export const AnnotationRecordSchema = z.object({
   status: z.string(),
   mask_encoding: z.literal("rle"),
   class_mask: ClassMaskRLESchema,
-  sam_prompts: z.array(z.unknown()).optional(),
+  sam_prompts: z.array(z.unknown()).nullish(),
 });
 
 export type AnnotationRecord = z.infer<typeof AnnotationRecordSchema>;

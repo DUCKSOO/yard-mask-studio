@@ -181,10 +181,12 @@ def export_download(
     base = str(Path(tmp_path).with_suffix(""))
     zip_path = shutil.make_archive(base, "zip", root_dir=str(full))
     logger.info("export/download tenant=%s export_id=%s zip=%s", tenant_id, export_id, zip_path)
+    created_date = (row.created_at or "")[:10].replace("-", "")  # "20260508" 형태
+    friendly_name = f"{row.dataset_id}_{created_date}.zip" if created_date else f"{row.dataset_id}.zip"
     cleanup = BackgroundTask(lambda p=zip_path: os.unlink(p) if os.path.isfile(p) else None)
     return FileResponse(
         zip_path,
-        filename=f"{export_id}.zip",
+        filename=friendly_name,
         media_type="application/zip",
         background=cleanup,
     )

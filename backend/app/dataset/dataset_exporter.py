@@ -8,7 +8,9 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+import numpy as np
 import yaml
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -72,7 +74,11 @@ def export_unet_dataset(
 
     for tile_id in labeled_tile_ids:
         shutil.copy2(ddir / "images" / f"{tile_id}.png", out / "images" / f"{tile_id}.png")
-        shutil.copy2(ddir / "masks" / f"{tile_id}.png", out / "masks" / f"{tile_id}.png")
+        # 마스크는 클래스 인덱스(0/1/2…)로 저장돼 있어 시각적으로 검정처럼 보임.
+        # 내보내기 시 occupied(>0) → 255, background(0) → 0 으로 바이너리 리맵.
+        raw_mask = np.array(Image.open(ddir / "masks" / f"{tile_id}.png"))
+        binary_mask = (raw_mask > 0).astype(np.uint8) * 255
+        Image.fromarray(binary_mask, mode="L").save(out / "masks" / f"{tile_id}.png")
 
     (out / "classes.json").write_text(
         json.dumps(cfg.classes.model_dump(), indent=2),
