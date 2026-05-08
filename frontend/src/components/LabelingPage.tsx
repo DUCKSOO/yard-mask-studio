@@ -1,6 +1,6 @@
 import Konva from "konva";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Group, Layer, Rect, Stage } from "react-konva";
+import { Circle, Group, Layer, Rect, Stage } from "react-konva";
 import {
   deleteAnnotation,
   getAnnotation,
@@ -91,8 +91,12 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   /** 켜면 점/박스 프롬프트 추가 직후 SAM 자동 실행 */
   const [autoSamRun, setAutoSamRun] = useState(true);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  /** 현재 타일에 서버 저장 어노테이션 존재 여부 — 라벨 삭제 버튼 활성화용 */
+  const [hasPersistedAnnotation, setHasPersistedAnnotation] = useState(false);
 
   const [liveCells, setLiveCells] = useState<Uint8Array | null>(null);
+  /** 브러시 모드: 포인터 주변 페인트 영역 미리보기 (이미지 좌표) */
+  const [brushCursor, setBrushCursor] = useState<{ x: number; y: number; eraser: boolean } | null>(null);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -254,7 +258,14 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
 
   useEffect(() => {
     brushLastPos.current = null;
+    setBrushCursor(null);
   }, [selectedTileId]);
+
+  useEffect(() => {
+    if (tool !== "brush") {
+      setBrushCursor(null);
+    }
+  }, [tool]);
 
   useEffect(() => {
     void reloadTiles();
@@ -268,6 +279,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     setStatusMsg(null);
     setLiveCells(null);
     brushLastPos.current = null;
+    setHasPersistedAnnotation(false);
     resetPromptsHistory();
     setPrompts([]);
     try {
@@ -280,6 +292,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
       const th = h;
 
       const existing = await getAnnotation(tenantId, datasetId, selectedTileId);
+      setHasPersistedAnnotation(existing !== null);
       if (existing) {
         if (existing.class_mask.width !== tw || existing.class_mask.height !== th) {
           setStatusMsg(
@@ -287,13 +300,18 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
           );
           reset(tw, th);
         } else {
+          const rawPrompts = existing.sam_prompts;
+          const loadedPrompts: SamPrompt[] = Array.isArray(rawPrompts)
+            ? (rawPrompts as SamPrompt[]).map((p) => ({ ...p }))
+            : [];
           const cells = decodeRleVl(
             existing.class_mask.counts,
             existing.class_mask.height,
             existing.class_mask.width,
           );
           reset(tw, th);
-          pushCellsWithSnapshot(cells, []);
+          pushCellsWithSnapshot(cells, loadedPrompts);
+          setPrompts(loadedPrompts);
         }
       } else {
         reset(tw, th);
@@ -326,8 +344,10 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
         status: "labeled",
         mask_encoding: "rle",
         class_mask: { height: h, width: w, counts },
+        sam_prompts: prompts.length > 0 ? prompts.map((p) => ({ ...p })) : undefined,
       });
       setStatusMsg("저장 완료");
+      setHasPersistedAnnotation(true);
       logger.info("annotation saved (client)", { tenantId, datasetId, tileId: selectedTileId, w, h });
       void reloadTiles();
     } catch (e: unknown) {
@@ -335,7 +355,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
       setStatusMsg(msg);
       logger.error("save failed", msg);
     }
-  }, [selectedTileId, ann, annState, tenantId, datasetId, hasDataset, reloadTiles]);
+  }, [selectedTileId, ann, annState, tenantId, datasetId, hasDataset, reloadTiles, prompts]);
 
   const handleDeleteLabel = useCallback(async () => {
     if (!hasDataset || !selectedTileId) {
@@ -402,6 +422,19 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
 
   const { pxX, pxY } = gridPixelSize(config, meta);
 
+  const deleteLabelTitle = useMemo(() => {
+    if (!selectedTileId) {
+      return "타일을 선택하세요";
+    }
+    if (cfgLoading) {
+      return "설정 로딩 중…";
+    }
+    if (!hasPersistedAnnotation) {
+      return "서버에 저장된 라벨이 없습니다";
+    }
+    return "서버에 저장된 마스크 삭제 후 미라벨로 복구";
+  }, [selectedTileId, cfgLoading, hasPersistedAnnotation]);
+
   const toImageCoords = useCallback(
     (_evt: Konva.KonvaEventObject<MouseEvent>): { x: number; y: number } | null => {
       const g = viewRef.current;
@@ -457,19 +490,37 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
 
   const onStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const d = panDrag.current;
-    if (!d) {
+    if (d) {
+      const stage = e.target.getStage();
+      const p = stage?.getPointerPosition();
+      if (!p) {
+        return;
+      }
+      setPan((prev) => ({
+        x: prev.x + (p.x - d.lastX),
+        y: prev.y + (p.y - d.lastY),
+      }));
+      panDrag.current = { lastX: p.x, lastY: p.y };
       return;
     }
-    const stage = e.target.getStage();
-    const p = stage?.getPointerPosition();
-    if (!p) {
-      return;
+    if (tool === "brush" && viewRef.current && iw > 0 && ih > 0) {
+      const lp = viewRef.current.getRelativePointerPosition();
+      if (!lp) {
+        setBrushCursor(null);
+        return;
+      }
+      if (lp.x < 0 || lp.x > iw || lp.y < 0 || lp.y > ih) {
+        setBrushCursor(null);
+        return;
+      }
+      const eraser = (e.evt.buttons & 2) !== 0;
+      setBrushCursor({ x: lp.x, y: lp.y, eraser });
     }
-    setPan((prev) => ({
-      x: prev.x + (p.x - d.lastX),
-      y: prev.y + (p.y - d.lastY),
-    }));
-    panDrag.current = { lastX: p.x, lastY: p.y };
+  };
+
+  const onStageMouseLeave = () => {
+    panDrag.current = null;
+    setBrushCursor(null);
   };
 
   const onStageMouseUp = () => {
@@ -749,7 +800,8 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
                 onSave={() => void handleSave()}
                 saveDisabled={!selectedTileId || cfgLoading}
                 onDeleteLabel={() => void handleDeleteLabel()}
-                deleteLabelDisabled={!selectedTileId || cfgLoading}
+                deleteLabelDisabled={!selectedTileId || cfgLoading || !hasPersistedAnnotation}
+                deleteLabelTitle={deleteLabelTitle}
                 onRunSam={handleRunSam}
                 samBusy={samBusy}
                 samDisabled={prompts.length === 0}
@@ -784,7 +836,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
               onMouseDown={onStageMouseDown}
               onMouseMove={onStageMouseMove}
               onMouseUp={onStageMouseUp}
-              onMouseLeave={onStageMouseUp}
+              onMouseLeave={onStageMouseLeave}
               onContextMenu={(e: Konva.KonvaEventObject<MouseEvent>) => {
                 e.evt.preventDefault();
               }}
@@ -807,6 +859,20 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
                       onPaintEnd={onMaskPaintEnd}
                     />
                   ) : null}
+                  {tool === "brush" && brushCursor ? (
+                    <Circle
+                      listening={false}
+                      perfectDrawEnabled={false}
+                      x={brushCursor.x}
+                      y={brushCursor.y}
+                      radius={brushRadius}
+                      stroke={brushCursor.eraser ? "#dc2626" : "#2563eb"}
+                      strokeWidth={2 / Math.max(zoom, 0.05)}
+                      fill={
+                        brushCursor.eraser ? "rgba(220,38,38,0.14)" : "rgba(37,99,235,0.14)"
+                      }
+                    />
+                  ) : null}
                   {showHitRect ? (
                     <Rect
                       width={iw}
@@ -816,7 +882,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
                       onMouseDown={hitRectMouseDown}
                     />
                   ) : null}
-                  {prompts.length > 0 ? <PromptOverlay prompts={prompts} /> : null}
+                  {prompts.length > 0 ? <PromptOverlay prompts={prompts} viewScale={zoom} /> : null}
                 </Group>
               </Layer>
             </Stage>

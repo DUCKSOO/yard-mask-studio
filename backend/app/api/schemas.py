@@ -94,6 +94,10 @@ class AnnotationSaveRequest(BaseModel):
         description="마스크 인코딩. 현재는 `rle`만 지원.",
     )
     class_mask: ClassMaskRLE = Field(description="클래스 인덱스 마스크 RLE.")
+    sam_prompts: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="저장 시점의 SAM 프롬프트 배열 (선택). 없으면 null.",
+    )
 
 
 class TileStatusPatch(BaseModel):

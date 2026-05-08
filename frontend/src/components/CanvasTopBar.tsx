@@ -9,6 +9,7 @@ type CanvasTopBarProps = {
   saveDisabled: boolean;
   onDeleteLabel: () => void;
   deleteLabelDisabled: boolean;
+  deleteLabelTitle?: string;
   onRunSam: () => void;
   samBusy: boolean;
   samDisabled: boolean;
@@ -33,6 +34,7 @@ export function CanvasTopBar({
   saveDisabled,
   onDeleteLabel,
   deleteLabelDisabled,
+  deleteLabelTitle,
   onRunSam,
   samBusy,
   samDisabled,
@@ -100,7 +102,10 @@ export function CanvasTopBar({
           className="canvas-top-bar-btn canvas-top-bar-btn-danger"
           onClick={onDeleteLabel}
           disabled={deleteLabelDisabled}
-          title="서버에 저장된 마스크 삭제 후 미라벨로 복구"
+          title={
+            deleteLabelTitle ??
+            "서버에 저장된 마스크 삭제 후 미라벨로 복구"
+          }
         >
           라벨 삭제
         </button>

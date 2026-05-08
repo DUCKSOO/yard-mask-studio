@@ -122,6 +122,7 @@ export const AnnotationSaveBodySchema = z.object({
   status: z.string(),
   mask_encoding: z.literal("rle"),
   class_mask: ClassMaskRLESchema,
+  sam_prompts: z.array(z.unknown()).optional(),
 });
 
 export type AnnotationSaveBody = z.infer<typeof AnnotationSaveBodySchema>;
@@ -131,6 +132,7 @@ export const AnnotationRecordSchema = z.object({
   status: z.string(),
   mask_encoding: z.literal("rle"),
   class_mask: ClassMaskRLESchema,
+  sam_prompts: z.array(z.unknown()).optional(),
 });
 
 export type AnnotationRecord = z.infer<typeof AnnotationRecordSchema>;
