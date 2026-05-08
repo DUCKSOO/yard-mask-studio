@@ -26,7 +26,9 @@ class UnetTileDataset(Dataset):
         split_path = self.export_dir / "splits" / f"{split}.json"
         if not split_path.is_file():
             raise FileNotFoundError(split_path)
-        self.tile_ids: list[str] = json.loads(split_path.read_text(encoding="utf-8"))
+        raw = json.loads(split_path.read_text(encoding="utf-8"))
+        # 구 포맷: [...], 신 포맷: {"split_strategy": ..., "items": [...]}
+        self.tile_ids: list[str] = raw if isinstance(raw, list) else raw["items"]
         self.images_dir = self.export_dir / "images"
         self.masks_dir = self.export_dir / "masks"
 
