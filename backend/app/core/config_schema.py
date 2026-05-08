@@ -59,7 +59,7 @@ class GridConfig(BaseModel):
 
 class SamConfig(BaseModel):
     # 새 variant 추가: SamModelVariant · 아래 필드 · YAML · OpenAPI enum · README 동시 갱신.
-    model_variant: SamModelVariant = "hiera_large"
+    model_variant: SamModelVariant = "hiera_base"
     multimask_output: bool = True
     max_candidates: int = Field(default=3, ge=1, le=16)
 

@@ -17,7 +17,7 @@ grid:
   origin: "source_image_top_left"
 
 sam:
-  model_variant: "hiera_large"
+  model_variant: "hiera_base"
   multimask_output: true
   max_candidates: 3
 

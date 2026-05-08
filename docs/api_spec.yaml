@@ -318,12 +318,11 @@ paths:
               $ref: "#/components/schemas/SamPredictRequest"
       responses:
         "200":
-          description: 마스크 후보 placeholder
+          description: 마스크 후보 및 RLE 인코딩된 이진 마스크 목록
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/SamPredictResponse"
 
   /api/tenants/{tenant_id}/datasets/{dataset_id}/tiles/{tile_id}/annotation:
     post:
@@ -591,6 +590,20 @@ components:
               - $ref: "#/components/schemas/SamPointPrompt"
               - $ref: "#/components/schemas/SamBoxPrompt"
         multimask_output: { type: boolean }
+
+    SamPredictResponse:
+      type: object
+      required: [tile_id, candidates, mask_shape, masks_rle]
+      properties:
+        tile_id: { type: string }
+        candidates: { type: integer }
+        mask_shape:
+          type: array
+          items: { type: integer }
+        masks_rle:
+          type: array
+          items: { type: string }
+          description: 이진 마스크(0/1) RLE 문자열 목록, 품질 점수 내림차순
 
     ClassMaskRLE:
       type: object

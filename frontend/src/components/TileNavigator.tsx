@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
+import type { TileItem } from "../api/client";
+import { formatTileGridLabel } from "../utils/tileGrid";
 
 export type TileFilter = "all" | "unlabeled" | "labeled" | "approved" | "rejected";
-
-export type TileNavItem = { tile_id: string; status: string };
 
 const STATUS_CLASS: Record<string, string> = {
   unlabeled: "tile-unlabeled",
@@ -15,14 +15,16 @@ function statusClass(status: string): string {
   return STATUS_CLASS[status] ?? "tile-unknown";
 }
 
-/** 긴 tile_id는 그리드에서 축약 표시 (전체는 title 툴팁) */
+/** 긴 tile_id는 보조 줄에 축약 (전체는 title 툴팁) */
 function shortId(tileId: string): string {
-  if (tileId.length <= 14) return tileId;
-  return `…${tileId.slice(-12)}`;
+  if (tileId.length <= 18) {
+    return tileId;
+  }
+  return `…${tileId.slice(-14)}`;
 }
 
 type TileNavigatorProps = {
-  tiles: TileNavItem[];
+  tiles: TileItem[];
   selectedTileId: string | null;
   onSelect: (id: string) => void;
 };
@@ -102,19 +104,28 @@ export function TileNavigator({ tiles, selectedTileId, onSelect }: TileNavigator
         {filtered.length === 0 ? (
           <p className="tile-grid-empty">해당 상태의 타일이 없습니다.</p>
         ) : (
-          filtered.map((t) => (
-            <button
-              key={t.tile_id}
-              type="button"
-              role="option"
-              aria-selected={selectedTileId === t.tile_id}
-              title={`${t.tile_id} — ${t.status}`}
-              className={`tile-btn ${statusClass(t.status)}${selectedTileId === t.tile_id ? " selected" : ""}`}
-              onClick={() => onSelect(t.tile_id)}
-            >
-              <span className="tile-btn-id">{shortId(t.tile_id)}</span>
-            </button>
-          ))
+          filtered.map((t) => {
+            const gridLabel = formatTileGridLabel(t.metadata);
+            const titleParts = [
+              gridLabel ? `격자 ${gridLabel}` : null,
+              t.tile_id,
+              t.status,
+            ].filter(Boolean);
+            return (
+              <button
+                key={t.tile_id}
+                type="button"
+                role="option"
+                aria-selected={selectedTileId === t.tile_id}
+                title={titleParts.join(" · ")}
+                className={`tile-btn ${statusClass(t.status)}${selectedTileId === t.tile_id ? " selected" : ""}`}
+                onClick={() => onSelect(t.tile_id)}
+              >
+                <span className="tile-btn-grid">{gridLabel ?? "—"}</span>
+                <span className="tile-btn-id">{shortId(t.tile_id)}</span>
+              </button>
+            );
+          })
         )}
       </div>
     </div>

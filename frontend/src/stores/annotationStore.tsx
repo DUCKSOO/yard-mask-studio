@@ -144,6 +144,39 @@ export function paintBrush(
   return out;
 }
 
+/**
+ * 두 점 사이를 따라 브러시 스탬프를 반복해 빠른 드래그 시 끊김을 줄인다.
+ * 스텝은 반경의 일부로 두어 원들이 겹치도록 한다.
+ */
+export function paintBrushStroke(
+  cells: Uint8Array,
+  width: number,
+  height: number,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  radius: number,
+  classId: number,
+): Uint8Array {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 1e-6) {
+    return paintBrush(cells, width, height, x0, y0, radius, classId);
+  }
+  const step = Math.max(1, radius * 0.45);
+  const n = Math.max(1, Math.ceil(dist / step));
+  let out: Uint8Array = cells;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const cx = x0 + dx * t;
+    const cy = y0 + dy * t;
+    out = paintBrush(out, width, height, cx, cy, radius, classId);
+  }
+  return out;
+}
+
 /** SAM 스텁: 양성 포인트 주변 디스크를 occupied(1)로 */
 export function applyPositiveDiskMask(
   cells: Uint8Array,

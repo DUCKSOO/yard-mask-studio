@@ -22,12 +22,12 @@ SAM 2.1로 mask 후보를 제안하고, 작업자가 확정한 뒤 class index m
 
 ## SAM 모델 추가 방법
 
-허용 **백본 variant** 는 코드·설정·OpenAPI에서 동일한 목록으로 관리한다: `hiera_large` (기본, 고성능·고메모리), `hiera_base` (경량).
+허용 **백본 variant** 는 코드·설정·OpenAPI에서 동일한 목록으로 관리한다: `hiera_base` (시드·`.env.example` 기본, VRAM 부담 적음), `hiera_large` (고성능·고메모리).
 
 1. **체크포인트**를 레포의 `models/` 에 둔다 (`models/` 는 `.gitignore` 대상).  
    - 수동: [facebookresearch/sam2](https://github.com/facebookresearch/sam2) 의 `checkpoints/download_ckpts.sh` 와 동일한 Meta CDN URL에서 받는다.  
-   - 스크립트: 저장소 루트에서 `uv run python scripts/download_sam_checkpoint.py --variant hiera_large`  
-     (선택) `--with-config` 로 같은 디렉터리에 `sam2.1_hiera_l.yaml` 등 설정 YAML도 받을 수 있다. `hiera_base` 는 `sam2.1_hiera_base_plus.pt` + `sam2.1_hiera_b+.yaml` 에 대응한다.
+   - 스크립트: 저장소 루트에서 `uv run python scripts/download_sam_checkpoint.py --variant hiera_base`  
+     (선택) `--with-config` 로 같은 디렉터리에 `sam2.1_hiera_b+.yaml` 등 설정 YAML도 받을 수 있다. `hiera_large` 는 `--variant hiera_large` → `sam2.1_hiera_large.pt` + `sam2.1_hiera_l.yaml` 에 대응한다.
 2. `.env` 의 `SAM_CHECKPOINT_PATH` 를 그 `.pt` 파일의 **절대 경로**로 맞춘다. `SAM_MODEL_CFG` 는 사용 중인 variant에 맞게 둔다 (예: large → `sam2.1_hiera_l.yaml`, base → `sam2.1_hiera_b+.yaml`).
 3. 새 아키텍처 이름을 쓰려면 다음을 **한 세트로** 갱신한다.  
    - [`backend/app/core/config_schema.py`](backend/app/core/config_schema.py) — `SamModelVariant` / `SamConfig.model_variant` 의 `Literal` 에 값 추가 (모듈 상단 독스트링 절차 참고).  

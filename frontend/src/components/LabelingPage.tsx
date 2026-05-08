@@ -9,21 +9,25 @@ import {
   samPredict,
   saveAnnotation,
   type SamPrompt,
+  type TileItem,
 } from "../api/client";
 import { ClassPanel } from "./ClassPanel";
 import { GridOverlay } from "./GridOverlay";
 import { buildClassColorMap, MaskCanvas } from "./MaskCanvas";
+import { PromptOverlay } from "./PromptOverlay";
 import { TileNavigator } from "./TileNavigator";
 import { TileImageLayer, useHtmlImage } from "./TileViewer";
 import { ToolBar, type ToolMode } from "./ToolBar";
 import {
   applyPositiveDiskMask,
   paintBrush,
+  paintBrushStroke,
   useAnnotation,
 } from "../stores/annotationStore";
 import { useConfig } from "../stores/configStore";
 import { decodeRleVl, encodeRleVl } from "../utils/rle";
 import { logger } from "../utils/logger";
+import { compareTilesForNavigator, formatTileGridLabel } from "../utils/tileGrid";
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
@@ -65,17 +69,21 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   const ann = useAnnotation();
   const { reset, pushCells, state: annState } = ann;
 
-  const [tiles, setTiles] = useState<{ tile_id: string; status: string }[]>([]);
+  const [tiles, setTiles] = useState<TileItem[]>([]);
   const [tileError, setTileError] = useState<string | null>(null);
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
   const [meta, setMeta] = useState<Record<string, unknown>>({});
 
-  const [tool, setTool] = useState<ToolMode>("brush");
+  const [tool, setTool] = useState<ToolMode>("point_pos");
   const [brushRadius, setBrushRadius] = useState(10);
   const [prompts, setPrompts] = useState<SamPrompt[]>([]);
   const [selectedClassId, setSelectedClassId] = useState(1);
   const [samBusy, setSamBusy] = useState(false);
+  /** SAM 요청 중 추가 호출 방지 (setState 비동기와의 경합 대비) */
+  const samInFlight = useRef(false);
   const [samMessage, setSamMessage] = useState<string | null>(null);
+  /** 켜면 점/박스 프롬프트 추가 직후 SAM 자동 실행 */
+  const [autoSamRun, setAutoSamRun] = useState(true);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   const [liveCells, setLiveCells] = useState<Uint8Array | null>(null);
@@ -84,6 +92,10 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   const [pan, setPan] = useState({ x: 40, y: 40 });
   const panDrag = useRef<{ lastX: number; lastY: number } | null>(null);
   const boxStart = useRef<{ x: number; y: number } | null>(null);
+  /** 브러시 선분 보간용 마지막 포인터 위치 (이미지 좌표, 부동소수) */
+  const brushLastPos = useRef<{ x: number; y: number } | null>(null);
+  /** 현재 스트로크가 지우개(우클릭 또는 지우개 도구)인지 */
+  const brushStrokeEraser = useRef(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ w: 800, h: 560 });
@@ -136,6 +148,11 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     return { total, labeled, approved };
   }, [tiles]);
 
+  const selectedTileGridLabel = useMemo(() => {
+    const t = tiles.find((x) => x.tile_id === selectedTileId);
+    return formatTileGridLabel(t?.metadata);
+  }, [tiles, selectedTileId]);
+
   const reloadTiles = useCallback(async () => {
     setTileError(null);
     if (!datasetId.trim()) {
@@ -146,9 +163,10 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     }
     try {
       const list = await getTiles(tenantId, datasetId, { limit: 500 });
-      setTiles(list.map((t) => ({ tile_id: t.tile_id, status: t.status })));
-      setSelectedTileId((prev) => prev ?? (list[0]?.tile_id ?? null));
-      logger.info("tiles loaded", { tenantId, datasetId, count: list.length });
+      const sorted = [...list].sort(compareTilesForNavigator);
+      setTiles(sorted);
+      setSelectedTileId((prev) => prev ?? (sorted[0]?.tile_id ?? null));
+      logger.info("tiles loaded", { tenantId, datasetId, count: sorted.length });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setTileError(msg);
@@ -161,6 +179,10 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   }, [tenantId, datasetId]);
 
   useEffect(() => {
+    brushLastPos.current = null;
+  }, [selectedTileId]);
+
+  useEffect(() => {
     void reloadTiles();
   }, [reloadTiles]);
 
@@ -171,6 +193,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     setSamMessage(null);
     setStatusMsg(null);
     setLiveCells(null);
+    brushLastPos.current = null;
     setPrompts([]);
     try {
       const m = await getTileMetadata(tenantId, datasetId, selectedTileId);
@@ -356,12 +379,97 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     panDrag.current = null;
   };
 
+  const handleRunSamWithPrompts = useCallback(
+    async (promptList: SamPrompt[]) => {
+      if (!hasDataset || !selectedTileId || !ann.current || !annState || promptList.length === 0) {
+        return;
+      }
+      if (samInFlight.current) {
+        return;
+      }
+      samInFlight.current = true;
+      setSamBusy(true);
+      setSamMessage(null);
+      try {
+        const res = await samPredict(
+          tenantId,
+          datasetId,
+          selectedTileId,
+          promptList,
+          config?.sam.multimask_output,
+        );
+        const w = annState.width;
+        const h = annState.height;
+        let msg = `SAM 응답: 후보 ${res.candidates}개`;
+        if (res.masks_rle.length > 0) {
+          try {
+            const binary = decodeRleVl(res.masks_rle[0], h, w);
+            const base = ann.current;
+            const next = new Uint8Array(base.length);
+            for (let i = 0; i < base.length; i++) {
+              next[i] = binary[i] === 1 ? selectedClassId : base[i]!;
+            }
+            pushCells(next);
+            msg += " · 마스크 적용됨";
+          } catch (decodeErr: unknown) {
+            msg += ` · RLE 디코딩 실패: ${decodeErr instanceof Error ? decodeErr.message : String(decodeErr)}`;
+          }
+        } else if (res.candidates > 0 && res.mask_shape.length >= 2) {
+          const lastPos = [...promptList].reverse().find((p) => p.type === "point" && p.label === "positive");
+          if (lastPos && lastPos.type === "point") {
+            const next = applyPositiveDiskMask(ann.current, w, h, lastPos.x, lastPos.y);
+            pushCells(next);
+            msg += " · 스텁 영역 병합(API가 픽셀 미반환 시)";
+          } else {
+            msg += " · 양성 점 없음 — 브러시로 편집";
+          }
+        } else {
+          msg += " · 후보 없음 — 브러시로 편집";
+        }
+        setSamMessage(msg);
+      } catch (e: unknown) {
+        setSamMessage(e instanceof Error ? e.message : String(e));
+      } finally {
+        samInFlight.current = false;
+        setSamBusy(false);
+      }
+    },
+    [
+      annState,
+      config?.sam.multimask_output,
+      datasetId,
+      hasDataset,
+      pushCells,
+      selectedClassId,
+      selectedTileId,
+      tenantId,
+    ],
+  );
+
+  const handleRunSam = useCallback(() => {
+    void handleRunSamWithPrompts(prompts);
+  }, [handleRunSamWithPrompts, prompts]);
+
   const hitRectMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (e.evt.button !== 0) {
-      return;
-    }
     const pos = toImageCoords(e);
     if (!pos) {
+      return;
+    }
+    // 우클릭: SAM 프롬프트 모드(점/박스)에서는 제외(음성) 점 추가
+    if (e.evt.button === 2) {
+      e.evt.preventDefault();
+      if (tool === "point_pos" || tool === "point_neg" || tool === "box") {
+        setPrompts((q) => {
+          const next = [...q, { type: "point", x: pos.x, y: pos.y, label: "negative" } as const];
+          if (autoSamRun) {
+            queueMicrotask(() => void handleRunSamWithPrompts(next));
+          }
+          return next;
+        });
+      }
+      return;
+    }
+    if (e.evt.button !== 0) {
       return;
     }
     if (tool === "pan") {
@@ -373,11 +481,23 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
       return;
     }
     if (tool === "point_pos") {
-      setPrompts((q) => [...q, { type: "point", x: pos.x, y: pos.y, label: "positive" }]);
+      setPrompts((q) => {
+        const next = [...q, { type: "point", x: pos.x, y: pos.y, label: "positive" } as const];
+        if (autoSamRun) {
+          queueMicrotask(() => void handleRunSamWithPrompts(next));
+        }
+        return next;
+      });
       return;
     }
     if (tool === "point_neg") {
-      setPrompts((q) => [...q, { type: "point", x: pos.x, y: pos.y, label: "negative" }]);
+      setPrompts((q) => {
+        const next = [...q, { type: "point", x: pos.x, y: pos.y, label: "negative" } as const];
+        if (autoSamRun) {
+          queueMicrotask(() => void handleRunSamWithPrompts(next));
+        }
+        return next;
+      });
       return;
     }
     if (tool === "box") {
@@ -386,6 +506,9 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   };
 
   const hitRectMouseUp = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (e.evt.button !== 0) {
+      return;
+    }
     if (tool !== "box" || !boxStart.current) {
       return;
     }
@@ -402,73 +525,55 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     if (x2 - x1 < 2 || y2 - y1 < 2) {
       return;
     }
-    setPrompts((q) => [...q, { type: "box", x1, y1, x2, y2 }]);
+    setPrompts((q) => {
+      const boxPrompt: SamPrompt = { type: "box", x1, y1, x2, y2 };
+      const next = [...q, boxPrompt];
+      if (autoSamRun) {
+        queueMicrotask(() => void handleRunSamWithPrompts(next));
+      }
+      return next;
+    });
   };
 
-  const onMaskPaintStart = (x: number, y: number) => {
+  const onMaskPaintStart = (x: number, y: number, opts?: { eraser?: boolean }) => {
     if ((tool !== "brush" && tool !== "eraser") || !ann.current) {
       return;
     }
-    const nx = clamp(Math.floor(x), 0, iw - 1);
-    const ny = clamp(Math.floor(y), 0, ih - 1);
-    const classId = tool === "eraser" ? 0 : selectedClassId;
+    const nx = clamp(x, 0, iw - 1);
+    const ny = clamp(y, 0, ih - 1);
+    const isEraser = tool === "eraser" || Boolean(opts?.eraser);
+    brushStrokeEraser.current = isEraser;
+    const classId = isEraser ? 0 : selectedClassId;
     const b = paintBrush(ann.current, iw, ih, nx, ny, brushRadius, classId);
     setLiveCells(b);
+    brushLastPos.current = { x: nx, y: ny };
   };
 
   const onMaskPaintMove = (x: number, y: number) => {
     if ((tool !== "brush" && tool !== "eraser") || !liveCells) {
       return;
     }
-    const nx = clamp(Math.floor(x), 0, iw - 1);
-    const ny = clamp(Math.floor(y), 0, ih - 1);
-    const classId = tool === "eraser" ? 0 : selectedClassId;
+    const nx = clamp(x, 0, iw - 1);
+    const ny = clamp(y, 0, ih - 1);
+    const classId = brushStrokeEraser.current ? 0 : selectedClassId;
+    const last = brushLastPos.current;
+    if (!last) {
+      brushLastPos.current = { x: nx, y: ny };
+      setLiveCells((prev) => (prev ? paintBrush(prev, iw, ih, nx, ny, brushRadius, classId) : prev));
+      return;
+    }
     setLiveCells((prev) =>
-      prev ? paintBrush(prev, iw, ih, nx, ny, brushRadius, classId) : prev,
+      prev ? paintBrushStroke(prev, iw, ih, last.x, last.y, nx, ny, brushRadius, classId) : prev,
     );
+    brushLastPos.current = { x: nx, y: ny };
   };
 
   const onMaskPaintEnd = () => {
+    brushLastPos.current = null;
+    brushStrokeEraser.current = false;
     if (liveCells) {
       ann.pushCells(liveCells);
       setLiveCells(null);
-    }
-  };
-
-  const handleRunSam = async () => {
-    if (!hasDataset || !selectedTileId || !ann.current || !annState) {
-      return;
-    }
-    setSamBusy(true);
-    setSamMessage(null);
-    try {
-      const res = await samPredict(
-        tenantId,
-        datasetId,
-        selectedTileId,
-        prompts,
-        config?.sam.multimask_output,
-      );
-      const w = annState.width;
-      const h = annState.height;
-      let msg = `SAM 응답: 후보 ${res.candidates}개`;
-      if (res.candidates > 0 && res.mask_shape.length >= 2) {
-        const lastPos = [...prompts].reverse().find((p) => p.type === "point" && p.label === "positive");
-        if (lastPos && lastPos.type === "point") {
-          const next = applyPositiveDiskMask(ann.current, w, h, lastPos.x, lastPos.y);
-          pushCells(next);
-          msg += " · 스텁 영역 병합(API가 픽셀 미반환 시)";
-        } else {
-          msg += " · 양성 점 없음 — 브러시로 편집";
-        }
-      } else {
-        msg += " · 후보 없음 — 브러시로 편집";
-      }
-      setSamMessage(msg);
-    } catch (e: unknown) {
-      setSamMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSamBusy(false);
     }
   };
 
@@ -514,6 +619,17 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
           <p className="tile-progress-text">
             전체 {tileStats.total} | labeled {tileStats.labeled} | approved {tileStats.approved}
           </p>
+          {selectedTileId ? (
+            <p className="tile-selection-hint" title={selectedTileId}>
+              선택 타일:{" "}
+              {selectedTileGridLabel ? (
+                <strong className="tile-grid-tag">{selectedTileGridLabel}</strong>
+              ) : (
+                <span className="muted">격자 정보 없음</span>
+              )}
+              <code className="tile-id-inline">{selectedTileId}</code>
+            </p>
+          ) : null}
           <TileNavigator
             tiles={tiles}
             selectedTileId={selectedTileId}
@@ -525,9 +641,11 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
             onToolChange={setTool}
             prompts={prompts}
             onClearPrompts={() => setPrompts([])}
-            onRunSam={() => void handleRunSam()}
+            onRunSam={handleRunSam}
             samBusy={samBusy}
             samMessage={samMessage}
+            autoSamRun={autoSamRun}
+            onAutoSamRunChange={setAutoSamRun}
             brushRadius={brushRadius}
             onBrushRadiusChange={setBrushRadius}
           />
@@ -565,6 +683,9 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
               onMouseMove={onStageMouseMove}
               onMouseUp={onStageMouseUp}
               onMouseLeave={onStageMouseUp}
+              onContextMenu={(e: Konva.KonvaEventObject<MouseEvent>) => {
+                e.evt.preventDefault();
+              }}
             >
               <Layer>
                 <Group ref={viewRef} x={pan.x} y={pan.y} scaleX={zoom} scaleY={zoom}>
@@ -577,6 +698,8 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
                       height={ih}
                       colorMap={colorMap}
                       listening={tool === "brush" || tool === "eraser"}
+                      paintEraserMode={tool === "eraser"}
+                      brushRightEraser={tool === "brush"}
                       onPaintStart={onMaskPaintStart}
                       onPaintMove={onMaskPaintMove}
                       onPaintEnd={onMaskPaintEnd}
@@ -587,7 +710,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
                       width={iw}
                       height={ih}
                       fill="rgba(0,0,0,0)"
-                      listening
+                      listening={!samBusy}
                       onMouseDown={hitRectMouseDown}
                       onMouseUp={hitRectMouseUp}
                       onMouseMove={(e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -597,6 +720,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
                       }}
                     />
                   ) : null}
+                  {prompts.length > 0 ? <PromptOverlay prompts={prompts} /> : null}
                 </Group>
               </Layer>
             </Stage>

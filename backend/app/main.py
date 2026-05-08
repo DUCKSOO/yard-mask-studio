@@ -69,7 +69,7 @@ app = FastAPI(
         },
         {
             "name": "sam",
-            "description": "타일 이미지 + 프롬프트 기반 세그멘테이션 후보(구현·체크포인트에 따라 503 가능).",
+            "description": "타일 이미지 + 프롬프트 기반 SAM2 세그멘테이션 후보(RLE). 체크포인트·환경에 따라 503 가능.",
         },
         {
             "name": "annotation",

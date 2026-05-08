@@ -11,7 +11,8 @@ from fastapi import APIRouter, Body, HTTPException, Request
 from PIL import Image
 
 from backend.app.api.route_params import DatasetId, TenantId, TileId
-from backend.app.api.schemas import SamPredictRequest
+from backend.app.annotation import mask_service
+from backend.app.api.schemas import SamPredictRequest, SamPredictResponse
 from backend.app.core.tenant import assert_tenant_allowed
 from backend.app.deps import DbSession
 from backend.app.sam import prompt_handler
@@ -38,11 +39,12 @@ def _tenant(request: Request, tenant_id: str) -> None:
 @router.post(
     "/predict",
     summary="SAM 세그멘테이션 예측",
+    response_model=SamPredictResponse,
     description="""
-타일 PNG와 프롬프트(점/박스)를 받아 세그멘테이션 백엔드를 호출합니다.
+타일 PNG와 프롬프트(점/박스)를 받아 SAM2 세그멘테이션 백엔드를 호출합니다.
 
-- **현재 응답**은 후보 개수·첫 마스크 shape 위주이며, 픽셀 마스크 배열은 본문에 포함하지 않을 수 있습니다.
-- 체크포인트 미설정·미구현 시 **503** (`SamUnavailableError`).
+- 응답의 **`masks_rle`** 는 이진 마스크(0/1)를 행 우선 C-order **value:length RLE** 문자열로 인코딩한 목록입니다 (점수 순).
+- 체크포인트 미설정·로드 실패·추론 오류 시 **503** (`SamUnavailableError`).
 """,
 )
 def sam_predict(
@@ -55,7 +57,7 @@ def sam_predict(
         ...,
         description="프롬프트 목록 및 선택적 multimask_output.",
     ),
-) -> dict:
+) -> SamPredictResponse:
     _tenant(request, tenant_id)
     if tile_index.get_tile(db, tenant_id, dataset_id, tile_id) is None:
         raise HTTPException(status_code=404, detail="tile not found")
@@ -66,10 +68,21 @@ def sam_predict(
     im = Image.open(img_path).convert("RGB")
     arr = np.array(im, dtype=np.uint8)
     h, w = arr.shape[:2]
+    if not body.prompts:
+        raise HTTPException(status_code=422, detail="at least one prompt is required")
+
     try:
         prompts = prompt_handler.parse_prompts(body.prompts, w, h)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+
+    labeling_cfg = request.app.state.labeling_config
+    multimask = (
+        body.multimask_output
+        if body.multimask_output is not None
+        else labeling_cfg.sam.multimask_output
+    )
+    max_candidates = labeling_cfg.sam.max_candidates
 
     backend: SegmentationBackend = request.app.state.sam_predictor
     logger.info(
@@ -81,7 +94,14 @@ def sam_predict(
     )
     t0 = time.perf_counter()
     try:
-        masks = backend.predict(arr, prompts)
+        masks = backend.predict(
+            arr,
+            prompts,
+            multimask_output=multimask,
+            max_candidates=max_candidates,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except SamUnavailableError as e:
         logger.warning("sam/predict unavailable tenant=%s tile_id=%s: %s", tenant_id, tile_id, e)
         raise HTTPException(status_code=503, detail=str(e)) from e
@@ -93,8 +113,11 @@ def sam_predict(
         len(masks),
         elapsed_ms,
     )
-    return {
-        "tile_id": tile_id,
-        "candidates": len(masks),
-        "mask_shape": list(masks[0].shape) if masks else [],
-    }
+    masks_rle = [mask_service.encode_rle_vl(m) for m in masks]
+
+    return SamPredictResponse(
+        tile_id=tile_id,
+        candidates=len(masks),
+        mask_shape=list(masks[0].shape) if masks else [],
+        masks_rle=masks_rle,
+    )

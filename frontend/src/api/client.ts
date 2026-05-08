@@ -107,6 +107,7 @@ export const SamPredictResponseSchema = z.object({
   tile_id: z.string(),
   candidates: z.number(),
   mask_shape: z.array(z.number()),
+  masks_rle: z.array(z.string()).default([]),
 });
 
 export type SamPredictResponse = z.infer<typeof SamPredictResponseSchema>;

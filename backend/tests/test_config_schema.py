@@ -26,7 +26,7 @@ def test_labeling_dev_yaml_parses() -> None:
     raw = _load_dev_mapping()
     cfg = LabelingConfig.from_yaml_mapping(raw)
     assert cfg.tiling.tile_size == 1024
-    assert cfg.sam.model_variant == "hiera_large"
+    assert cfg.sam.model_variant == "hiera_base"
     assert cfg.classes.definitions[2].id == 255
 
 

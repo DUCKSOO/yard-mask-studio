@@ -57,7 +57,20 @@ class SamPredictRequest(BaseModel):
     )
     multimask_output: bool | None = Field(
         default=None,
-        description="다중 마스크 후보 여부. 생략 시 서버/모델 기본값.",
+        description="다중 마스크 후보 여부. 생략 시 서버 active_config 의 sam.multimask_output.",
+    )
+
+
+class SamPredictResponse(BaseModel):
+    tile_id: str = Field(description="요청한 타일 ID.")
+    candidates: int = Field(description="반환된 마스크 후보 개수.")
+    mask_shape: list[int] = Field(
+        default_factory=list,
+        description="첫 후보 마스크의 (H, W) 등 shape 정보. 후보가 없으면 빈 배열.",
+    )
+    masks_rle: list[str] = Field(
+        default_factory=list,
+        description="이진 마스크(0/1)를 행 우선 C-order value:length RLE로 인코딩한 문자열 목록 (품질 점수 내림차순).",
     )
 
 

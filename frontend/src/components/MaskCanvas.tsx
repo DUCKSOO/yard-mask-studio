@@ -24,19 +24,39 @@ export function buildClassColorMap(
   return m;
 }
 
+export type PaintStrokeOptions = {
+  /** 브러시 도구일 때 우클릭으로 시작한 지우개 스트로크 */
+  eraser?: boolean;
+};
+
 type MaskCanvasProps = {
   cells: Uint8Array;
   width: number;
   height: number;
   colorMap: Map<number, [number, number, number, number]>;
   listening: boolean;
-  onPaintStart?: (x: number, y: number) => void;
+  /** tool === eraser 일 때 true — 좌클릭만 지우개 */
+  paintEraserMode?: boolean;
+  /** tool === brush 일 때 true — 우클릭 드래그를 지우개로 처리 */
+  brushRightEraser?: boolean;
+  onPaintStart?: (x: number, y: number, opts?: PaintStrokeOptions) => void;
   onPaintMove?: (x: number, y: number) => void;
   onPaintEnd?: () => void;
 };
 
 export function MaskCanvas(props: MaskCanvasProps) {
-  const { cells, width, height, colorMap, listening, onPaintStart, onPaintMove, onPaintEnd } = props;
+  const {
+    cells,
+    width,
+    height,
+    colorMap,
+    listening,
+    paintEraserMode = false,
+    brushRightEraser = false,
+    onPaintStart,
+    onPaintMove,
+    onPaintEnd,
+  } = props;
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
 
   useLayoutEffect(() => {
@@ -76,15 +96,22 @@ export function MaskCanvas(props: MaskCanvasProps) {
       opacity={1}
       onMouseDown={(e) => {
         if (!listening) return;
-        if (e.evt.button !== 0) return;
+        const btn = e.evt.button;
+        if (btn === 2 && brushRightEraser) {
+          e.evt.preventDefault();
+        }
+        if (btn !== 0 && !(btn === 2 && brushRightEraser)) return;
         const pos = e.target.getRelativePointerPosition();
         if (pos) {
-          onPaintStart?.(pos.x, pos.y);
+          const eraser = paintEraserMode || (btn === 2 && brushRightEraser);
+          onPaintStart?.(pos.x, pos.y, eraser ? { eraser: true } : undefined);
         }
       }}
       onMouseMove={(e) => {
         if (!listening) return;
-        if ((e.evt.buttons & 1) === 0) return;
+        const left = (e.evt.buttons & 1) !== 0;
+        const right = (e.evt.buttons & 2) !== 0;
+        if (!left && !(brushRightEraser && right)) return;
         const pos = e.target.getRelativePointerPosition();
         if (pos) {
           onPaintMove?.(pos.x, pos.y);
@@ -92,7 +119,8 @@ export function MaskCanvas(props: MaskCanvasProps) {
       }}
       onMouseUp={(e) => {
         if (!listening) return;
-        if (e.evt.button !== 0) return;
+        const btn = e.evt.button;
+        if (btn !== 0 && !(btn === 2 && brushRightEraser)) return;
         onPaintEnd?.();
       }}
       onMouseLeave={() => {

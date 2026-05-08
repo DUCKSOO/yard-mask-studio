@@ -16,7 +16,7 @@ grid:
   origin: "source_image_top_left" # source_image_top_left | geo_origin | tile_top_left
 
 sam:
-  model_variant: "hiera_large" # hiera_large | hiera_base — Literal은 config_schema.py와 동기화
+  model_variant: "hiera_base" # hiera_large | hiera_base — Literal은 config_schema.py와 동기화
   multimask_output: true
   max_candidates: 3
 
