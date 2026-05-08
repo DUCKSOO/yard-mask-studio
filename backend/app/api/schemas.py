@@ -112,3 +112,29 @@ class ReviewQueueItem(BaseModel):
     status: str
     note: str | None
     created_at: str
+
+
+class ConfigImpactRequest(BaseModel):
+    tile_size: int | None = Field(
+        default=None,
+        ge=1,
+        description="가정할 tile_size(px). 생략 시 활성 설정의 값.",
+    )
+    tile_overlap: int | None = Field(
+        default=None,
+        ge=0,
+        description="가정할 tile_overlap(px). 생략 시 활성 설정의 값.",
+    )
+
+
+class DatasetImpactItem(BaseModel):
+    dataset_id: str = Field(description="데이터셋 ID.")
+    tile_count: int = Field(description="해당 데이터셋의 현재 타일 수.")
+    simulated_tile_count: int = Field(description="가정한 stride 비율로 추정한 타일 수.")
+
+
+class ConfigImpactResponse(BaseModel):
+    current_tile_count: int
+    simulated_tile_count: int
+    delta: int
+    affected_datasets: list[DatasetImpactItem]

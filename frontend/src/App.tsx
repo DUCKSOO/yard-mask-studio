@@ -11,9 +11,12 @@ import {
   type SamPrompt,
 } from "./api/client";
 import { ClassPanel } from "./components/ClassPanel";
+import { ConfigImpactWidget } from "./components/ConfigImpactWidget";
+import { ExportPanel } from "./components/ExportPanel";
 import { GridOverlay } from "./components/GridOverlay";
 import { buildClassColorMap, MaskCanvas } from "./components/MaskCanvas";
 import { ReviewPanel } from "./components/ReviewPanel";
+import { TileNavigator } from "./components/TileNavigator";
 import { TileImageLayer, useHtmlImage } from "./components/TileViewer";
 import { ToolBar, type ToolMode } from "./components/ToolBar";
 import {
@@ -27,8 +30,6 @@ import { decodeRleVl, encodeRleVl } from "./utils/rle";
 
 const DEFAULT_TENANT = import.meta.env.VITE_TENANT_ID ?? "default";
 const DEFAULT_DATASET = import.meta.env.VITE_DATASET_ID ?? "step3_e2e";
-
-const BRUSH_RADIUS = 10;
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
@@ -73,6 +74,7 @@ function InnerApp() {
   const [meta, setMeta] = useState<Record<string, unknown>>({});
 
   const [tool, setTool] = useState<ToolMode>("brush");
+  const [brushRadius, setBrushRadius] = useState(10);
   const [prompts, setPrompts] = useState<SamPrompt[]>([]);
   const [selectedClassId, setSelectedClassId] = useState(1);
   const [samBusy, setSamBusy] = useState(false);
@@ -125,6 +127,13 @@ function InnerApp() {
   }, [config]);
 
   const displayCells = liveCells ?? ann.current;
+
+  const tileStats = useMemo(() => {
+    const total = tiles.length;
+    const labeled = tiles.filter((t) => t.status === "labeled").length;
+    const approved = tiles.filter((t) => t.status === "approved").length;
+    return { total, labeled, approved };
+  }, [tiles]);
 
   const reloadTiles = useCallback(async () => {
     setTileError(null);
@@ -186,7 +195,66 @@ function InnerApp() {
     void loadTileData();
   }, [loadTileData]);
 
-  /** PNG 실제 크기는 타일 메타/저장 annotation 과 일치한다고 가정 (불일치 시 다시 불러오기 사용). */
+  const handleSave = useCallback(async () => {
+    if (!selectedTileId || !ann.current || !annState) {
+      return;
+    }
+    setStatusMsg(null);
+    try {
+      const w = annState.width;
+      const h = annState.height;
+      const counts = encodeRleVl(ann.current, w, h);
+      await saveAnnotation(tenantId, datasetId, selectedTileId, {
+        status: "labeled",
+        mask_encoding: "rle",
+        class_mask: { height: h, width: w, counts },
+      });
+      setStatusMsg("저장 완료");
+    } catch (e: unknown) {
+      setStatusMsg(e instanceof Error ? e.message : String(e));
+    }
+  }, [selectedTileId, ann, annState, tenantId, datasetId]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName ?? "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        return;
+      }
+      const k = e.key.toLowerCase();
+      if (e.ctrlKey || e.metaKey) {
+        if (k === "z") {
+          e.preventDefault();
+          ann.undo();
+          return;
+        }
+        if (k === "y") {
+          e.preventDefault();
+          ann.redo();
+          return;
+        }
+        if (k === "s") {
+          e.preventDefault();
+          void handleSave();
+          return;
+        }
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (k === "b") {
+          setTool("brush");
+        }
+        if (k === "e") {
+          setTool("eraser");
+        }
+        if (k === "p") {
+          setTool("pan");
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [ann, handleSave]);
 
   const { pxX, pxY } = gridPixelSize(config, meta);
 
@@ -314,23 +382,25 @@ function InnerApp() {
   };
 
   const onMaskPaintStart = (x: number, y: number) => {
-    if (tool !== "brush" || !ann.current) {
+    if ((tool !== "brush" && tool !== "eraser") || !ann.current) {
       return;
     }
     const nx = clamp(Math.floor(x), 0, iw - 1);
     const ny = clamp(Math.floor(y), 0, ih - 1);
-    const b = paintBrush(ann.current, iw, ih, nx, ny, BRUSH_RADIUS, selectedClassId);
+    const classId = tool === "eraser" ? 0 : selectedClassId;
+    const b = paintBrush(ann.current, iw, ih, nx, ny, brushRadius, classId);
     setLiveCells(b);
   };
 
   const onMaskPaintMove = (x: number, y: number) => {
-    if (tool !== "brush" || !liveCells) {
+    if ((tool !== "brush" && tool !== "eraser") || !liveCells) {
       return;
     }
     const nx = clamp(Math.floor(x), 0, iw - 1);
     const ny = clamp(Math.floor(y), 0, ih - 1);
+    const classId = tool === "eraser" ? 0 : selectedClassId;
     setLiveCells((prev) =>
-      prev ? paintBrush(prev, iw, ih, nx, ny, BRUSH_RADIUS, selectedClassId) : prev,
+      prev ? paintBrush(prev, iw, ih, nx, ny, brushRadius, classId) : prev,
     );
   };
 
@@ -338,26 +408,6 @@ function InnerApp() {
     if (liveCells) {
       ann.pushCells(liveCells);
       setLiveCells(null);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!selectedTileId || !ann.current || !annState) {
-      return;
-    }
-    setStatusMsg(null);
-    try {
-      const w = annState.width;
-      const h = annState.height;
-      const counts = encodeRleVl(ann.current, w, h);
-      await saveAnnotation(tenantId, datasetId, selectedTileId, {
-        status: "labeled",
-        mask_encoding: "rle",
-        class_mask: { height: h, width: w, counts },
-      });
-      setStatusMsg("저장 완료");
-    } catch (e: unknown) {
-      setStatusMsg(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -392,7 +442,7 @@ function InnerApp() {
     }
   };
 
-  const showHitRect = tool !== "brush";
+  const showHitRect = tool !== "brush" && tool !== "eraser";
 
   return (
     <div className="app-root">
@@ -416,20 +466,26 @@ function InnerApp() {
           <button type="button" onClick={() => void reloadTiles()}>
             타일 목록 새로고침
           </button>
-          <label>
-            타일
-            <select
-              value={selectedTileId ?? ""}
-              onChange={(e) => setSelectedTileId(e.target.value || null)}
-            >
-              <option value="">— 선택 —</option>
-              {tiles.map((t) => (
-                <option key={t.tile_id} value={t.tile_id}>
-                  {t.tile_id} ({t.status})
-                </option>
-              ))}
-            </select>
-          </label>
+          {tileStats.total > 0 ? (
+            <div className="tile-progress-bar-wrap" aria-label="진행률">
+              <div
+                className="tile-progress-bar tile-progress-labeled"
+                style={{ width: `${(tileStats.labeled / tileStats.total) * 100}%` }}
+              />
+              <div
+                className="tile-progress-bar tile-progress-approved"
+                style={{ width: `${(tileStats.approved / tileStats.total) * 100}%` }}
+              />
+            </div>
+          ) : null}
+          <p className="tile-progress-text">
+            전체 {tileStats.total} | labeled {tileStats.labeled} | approved {tileStats.approved}
+          </p>
+          <TileNavigator
+            tiles={tiles}
+            selectedTileId={selectedTileId}
+            onSelect={(id) => setSelectedTileId(id)}
+          />
           <ClassPanel config={config} selectedClassId={selectedClassId} onSelect={setSelectedClassId} />
           <ToolBar
             tool={tool}
@@ -439,6 +495,8 @@ function InnerApp() {
             onRunSam={() => void handleRunSam()}
             samBusy={samBusy}
             samMessage={samMessage}
+            brushRadius={brushRadius}
+            onBrushRadiusChange={setBrushRadius}
           />
           <div className="actions">
             <button type="button" onClick={() => ann.undo()} disabled={!ann.canUndo}>
@@ -458,6 +516,8 @@ function InnerApp() {
           <p className="meta-hint">
             그리드: {pxX}×{pxY}px (GSD 메타·설정 기반)
           </p>
+          <ExportPanel tenantId={tenantId} datasetId={datasetId} />
+          <ConfigImpactWidget tenantId={tenantId} />
           <ReviewPanel tenantId={tenantId} />
         </aside>
 
@@ -487,7 +547,7 @@ function InnerApp() {
                     width={iw}
                     height={ih}
                     colorMap={colorMap}
-                    listening={tool === "brush"}
+                    listening={tool === "brush" || tool === "eraser"}
                     onPaintStart={onMaskPaintStart}
                     onPaintMove={onMaskPaintMove}
                     onPaintEnd={onMaskPaintEnd}

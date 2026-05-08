@@ -1,6 +1,6 @@
 import type { SamPrompt } from "../api/client";
 
-export type ToolMode = "brush" | "point_pos" | "point_neg" | "box" | "pan";
+export type ToolMode = "brush" | "eraser" | "point_pos" | "point_neg" | "box" | "pan";
 
 type ToolBarProps = {
   tool: ToolMode;
@@ -10,6 +10,8 @@ type ToolBarProps = {
   onRunSam: () => void;
   samBusy: boolean;
   samMessage: string | null;
+  brushRadius: number;
+  onBrushRadiusChange: (r: number) => void;
 };
 
 export function ToolBar({
@@ -20,6 +22,8 @@ export function ToolBar({
   onRunSam,
   samBusy,
   samMessage,
+  brushRadius,
+  onBrushRadiusChange,
 }: ToolBarProps) {
   return (
     <div className="tool-bar">
@@ -28,6 +32,7 @@ export function ToolBar({
         {(
           [
             ["brush", "브러시"],
+            ["eraser", "지우개"],
             ["point_pos", "점(+)"],
             ["point_neg", "점(−)"],
             ["box", "박스"],
@@ -39,6 +44,21 @@ export function ToolBar({
           </button>
         ))}
       </div>
+      {tool === "brush" || tool === "eraser" ? (
+        <div className="brush-radius-row">
+          <label className="brush-radius-label">
+            반경 {brushRadius}px
+            <input
+              type="range"
+              min={2}
+              max={80}
+              step={1}
+              value={brushRadius}
+              onChange={(e) => onBrushRadiusChange(Number(e.target.value))}
+            />
+          </label>
+        </div>
+      ) : null}
       <p className="hint">휠: 확대/축소 · 중간 버튼 드래그: 이동</p>
       <div className="sam-row">
         <button type="button" disabled={samBusy || prompts.length === 0} onClick={onRunSam}>

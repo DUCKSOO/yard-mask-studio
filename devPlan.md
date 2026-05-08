@@ -209,7 +209,11 @@ GUI로 라벨링·저장한 데이터를 export해 U-Net dataloader가 동일하
 **진행 상황**
 
 - **완료 (6-A)**: 검수 큐 — `review_queue` 테이블, `GET .../review/queue`, approve/reject API, 라벨 저장(`labeled`) 시 큐에 `pending` 등록, 프론트 `ReviewPanel`.
-- **남음 (6-B)**: TileNavigator (타일 목록·상태 필터 UI) + brush 편집 강화 + export API 정식화 + 설정 영향도 분석 + 학습 연동·대량 라벨링.
+- **완료 (6-B 일부)**: TileNavigator — 상태별 통계 바·필터 탭·색상 그리드 선택 UI (`frontend/src/components/TileNavigator.tsx`).
+- **완료 (6-B 일부)**: brush 편집 강화 — 반경 슬라이더(2~80px)·지우개 도구(class 0) (`ToolBar.tsx`, `App.tsx`).
+- **완료 (6-B 일부)**: export UI — `triggerExport` / `getExportStatus` / `getExportDownloadUrl` 클라이언트, 사이드바 `ExportPanel`(폴링·ZIP 링크).
+- **완료 (6-B 일부)**: 키보드 단축키(Ctrl+Z/Y/S, B/E/P), 타일 진행률 바, 설정 영향도 API(`POST /api/config/tenants/{tenant_id}/impact`) + `ConfigImpactWidget`.
+- **남음 (6-B)**: 학습 연동·대량 라벨링(Phase 5 가이드·워크플로).
 
 원래 범위(참고):
 

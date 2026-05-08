@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Request
+from sqlalchemy import func, select
 
-from backend.app.api.route_params import ConfigSnapshotId
+from backend.app.api.route_params import ConfigSnapshotId, TenantId
+from backend.app.api.schemas import ConfigImpactRequest, ConfigImpactResponse, DatasetImpactItem
 from backend.app.core.config_schema import LabelingConfig
 from backend.app.core.config_store import (
     get_config_snapshot,
@@ -13,9 +15,24 @@ from backend.app.core.config_store import (
     rollback_to_snapshot,
     save_active_config,
 )
+from backend.app.core.db import TileRow
+from backend.app.core.tenant import assert_tenant_allowed
 from backend.app.deps import DbSession
 
 router = APIRouter(prefix="/config", tags=["config"])
+
+
+def _tenant(request: Request, tenant_id: str) -> None:
+    try:
+        assert_tenant_allowed(tenant_id, request.app.state.settings.default_tenant_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+
+def _tiling_stride_px(tile_size: int, tile_overlap: int) -> float:
+    return float(max(1, tile_size - tile_overlap))
 
 
 @router.get(
@@ -94,3 +111,75 @@ def snapshot_detail(snapshot_id: ConfigSnapshotId, db: DbSession) -> dict:
     if row is None:
         raise HTTPException(status_code=404, detail="snapshot not found")
     return {"id": row.id, "reason": row.reason, "created_at": row.created_at, "config_json": row.config_json}
+
+
+@router.post(
+    "/tenants/{tenant_id}/impact",
+    response_model=ConfigImpactResponse,
+    summary="설정 변경 영향도 분석",
+    description="""
+가상의 `tile_size` / `tile_overlap`에 대해, 현재 테넌트 타일 수 대비 **대략적인** 타일 수 변화를 추정합니다.
+DB·디스크는 변경하지 않습니다.
+
+- 생략한 필드는 **활성 설정** 값을 사용합니다.
+- 추정식: 타일 수 ∝ 1 / stride², stride = max(1, tile_size - tile_overlap).
+""",
+)
+def config_impact(
+    tenant_id: TenantId,
+    request: Request,
+    db: DbSession,
+    body: ConfigImpactRequest = Body(
+        ...,
+        description="분석할 tiling 파라미터. 둘 다 생략이면 활성 설정과 동일하여 delta는 0에 가깝습니다.",
+    ),
+) -> ConfigImpactResponse:
+    _tenant(request, tenant_id)
+    cfg = load_active_config(db)
+    if cfg is None:
+        raise HTTPException(status_code=500, detail="active_config not initialized")
+
+    old_ts = int(cfg.tiling.tile_size)
+    old_ov = int(cfg.tiling.tile_overlap)
+    new_ts = int(body.tile_size) if body.tile_size is not None else old_ts
+    new_ov = int(body.tile_overlap) if body.tile_overlap is not None else old_ov
+    if new_ov >= new_ts:
+        raise HTTPException(
+            status_code=400,
+            detail="effective tile_overlap must be less than tile_size",
+        )
+
+    old_stride = _tiling_stride_px(old_ts, old_ov)
+    new_stride = _tiling_stride_px(new_ts, new_ov)
+    ratio = (old_stride / new_stride) ** 2
+
+    stmt = (
+        select(TileRow.dataset_id, func.count(TileRow.id))
+        .where(TileRow.tenant_id == tenant_id)
+        .group_by(TileRow.dataset_id)
+        .order_by(TileRow.dataset_id)
+    )
+    rows = list(db.execute(stmt).all())
+
+    items: list[DatasetImpactItem] = []
+    current_total = 0
+    simulated_total = 0
+    for ds_id, cnt in rows:
+        c = int(cnt)
+        current_total += c
+        sim = max(0, round(c * ratio))
+        simulated_total += sim
+        items.append(
+            DatasetImpactItem(
+                dataset_id=str(ds_id),
+                tile_count=c,
+                simulated_tile_count=sim,
+            ),
+        )
+
+    return ConfigImpactResponse(
+        current_tile_count=current_total,
+        simulated_tile_count=simulated_total,
+        delta=simulated_total - current_total,
+        affected_datasets=items,
+    )

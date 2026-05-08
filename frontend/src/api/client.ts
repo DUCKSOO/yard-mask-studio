@@ -240,3 +240,60 @@ export async function rejectReview(
   );
   return z.object({ ok: z.boolean(), status: z.string() }).parse(data);
 }
+
+export async function triggerExport(
+  tenantId: string,
+  datasetId: string,
+): Promise<{ export_id: string }> {
+  const { data } = await api.post(
+    `/api/tenants/${tenantId}/datasets/${datasetId}/export/unet`,
+  );
+  return z.object({ export_id: z.string() }).parse(data);
+}
+
+export async function getExportStatus(
+  tenantId: string,
+  exportId: string,
+): Promise<{ status: string; sample_count: number; dataset_id: string }> {
+  const { data } = await api.get(
+    `/api/tenants/${tenantId}/exports/${encodeURIComponent(exportId)}/status`,
+  );
+  return z
+    .object({
+      status: z.string(),
+      sample_count: z.number(),
+      dataset_id: z.string(),
+    })
+    .parse(data);
+}
+
+export function getExportDownloadUrl(tenantId: string, exportId: string): string {
+  const path = `/api/tenants/${tenantId}/exports/${encodeURIComponent(exportId)}/download`;
+  if (baseURL) {
+    return `${baseURL.replace(/\/$/, "")}${path}`;
+  }
+  return path;
+}
+
+const DatasetImpactItemSchema = z.object({
+  dataset_id: z.string(),
+  tile_count: z.number(),
+  simulated_tile_count: z.number(),
+});
+
+export const ConfigImpactResponseSchema = z.object({
+  current_tile_count: z.number(),
+  simulated_tile_count: z.number(),
+  delta: z.number(),
+  affected_datasets: z.array(DatasetImpactItemSchema),
+});
+
+export type ConfigImpactResponse = z.infer<typeof ConfigImpactResponseSchema>;
+
+export async function getConfigImpact(
+  tenantId: string,
+  body: { tile_size?: number; tile_overlap?: number },
+): Promise<ConfigImpactResponse> {
+  const { data } = await api.post(`/api/config/tenants/${tenantId}/impact`, body);
+  return ConfigImpactResponseSchema.parse(data);
+}

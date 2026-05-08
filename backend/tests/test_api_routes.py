@@ -29,6 +29,24 @@ def test_get_config(api_client) -> None:
     assert body["tiling"]["tile_size"] == 1024
 
 
+def test_config_impact_empty_body(api_client) -> None:
+    r = api_client.post("/api/config/tenants/default/impact", json={})
+    assert r.status_code == 200
+    body = r.json()
+    assert "current_tile_count" in body
+    assert "simulated_tile_count" in body
+    assert "delta" in body
+    assert isinstance(body["affected_datasets"], list)
+
+
+def test_config_impact_invalid_overlap_400(api_client) -> None:
+    r = api_client.post(
+        "/api/config/tenants/default/impact",
+        json={"tile_size": 64, "tile_overlap": 64},
+    )
+    assert r.status_code == 400
+
+
 def test_create_dataset_and_list(api_client) -> None:
     r = api_client.post(
         "/api/tenants/default/datasets",
