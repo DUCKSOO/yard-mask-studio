@@ -85,6 +85,11 @@ def test_export_download_unknown_404(api_client) -> None:
     assert r.status_code == 404
 
 
+def test_export_summary_unknown_404(api_client) -> None:
+    r = api_client.get(f"/api/tenants/default/exports/{uuid.uuid4()}/summary")
+    assert r.status_code == 404
+
+
 def test_unet_dataloader_smoke_script_runs_on_sample_export(tmp_path: Path) -> None:
     """dataset_exporter로 만든 export에 대해 스크립트 1회 실행."""
     db_path = tmp_path / "smoke.db"

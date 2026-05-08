@@ -213,7 +213,8 @@ GUI로 라벨링·저장한 데이터를 export해 U-Net dataloader가 동일하
 - **완료 (6-B 일부)**: brush 편집 강화 — 반경 슬라이더(2~80px)·지우개 도구(class 0) (`ToolBar.tsx`, `App.tsx`).
 - **완료 (6-B 일부)**: export UI — `triggerExport` / `getExportStatus` / `getExportDownloadUrl` 클라이언트, 사이드바 `ExportPanel`(폴링·ZIP 링크).
 - **완료 (6-B 일부)**: 키보드 단축키(Ctrl+Z/Y/S, B/E/P), 타일 진행률 바, 설정 영향도 API(`POST /api/config/tenants/{tenant_id}/impact`) + `ConfigImpactWidget`.
-- **남음 (6-B)**: 학습 연동·대량 라벨링(Phase 5 가이드·워크플로).
+- **완료 (6-C / 도구 범위 마무리)**: 라벨링 가이드 v0.2 (`docs/labeling_guide.md`) — 작업 환경·흐름·단축키·100장 체크리스트·품질·**MLOps 인계**(학습은 별도 프로젝트); export 요약 API `GET /api/tenants/{tenant_id}/exports/{export_id}/summary`.
+- **범위 밖(별도 MLOps)**: 모델 학습·배포 파이프라인 — 본 레포는 라벨링·export까지.
 
 원래 범위(참고):
 
