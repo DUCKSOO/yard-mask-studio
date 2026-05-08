@@ -42,3 +42,20 @@ def upsert_review_row(
         row.note = note
         row.updated_at = now
     return row
+
+
+def delete_review_row(
+    db: Session,
+    *,
+    tenant_id: str,
+    dataset_id: str,
+    tile_id: str,
+) -> None:
+    stmt = select(ReviewQueueRow).where(
+        ReviewQueueRow.tenant_id == tenant_id,
+        ReviewQueueRow.dataset_id == dataset_id,
+        ReviewQueueRow.tile_id == tile_id,
+    )
+    row = db.scalars(stmt).first()
+    if row is not None:
+        db.delete(row)

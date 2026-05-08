@@ -17,7 +17,7 @@ from backend.app.core.db import AnnotationRow
 from backend.app.core.tenant import assert_tenant_allowed
 from backend.app.deps import DbSession
 from backend.app.services import dataset_service
-from backend.app.services.review_queue_service import upsert_review_row
+from backend.app.services.review_queue_service import delete_review_row, upsert_review_row
 from backend.app.tiling import tile_index
 
 router = APIRouter(
@@ -143,7 +143,10 @@ def get_annotation(
     "",
     status_code=204,
     summary="annotation 삭제",
-    description="DB 행을 지우고 `masks/{tile_id}.png`가 있으면 파일도 삭제합니다.",
+    description="""
+DB 행을 지우고 `masks/{tile_id}.png`가 있으면 파일도 삭제합니다.
+타일 상태를 `unlabeled`로 되돌리고, 해당 타일의 검수 큐 행이 있으면 제거합니다.
+""",
 )
 def delete_annotation(
     tenant_id: TenantId,
@@ -153,6 +156,9 @@ def delete_annotation(
     db: DbSession,
 ) -> None:
     _tenant(request, tenant_id)
+    if tile_index.get_tile(db, tenant_id, dataset_id, tile_id) is None:
+        raise HTTPException(status_code=404, detail="tile not found")
+
     stmt = select(AnnotationRow).where(
         AnnotationRow.tenant_id == tenant_id,
         AnnotationRow.dataset_id == dataset_id,
@@ -161,9 +167,13 @@ def delete_annotation(
     row = db.scalars(stmt).first()
     if row:
         db.delete(row)
-        db.commit()
+
     repo_root: Path = request.app.state.repo_root
     mask_path = dataset_service.dataset_dir(repo_root, tenant_id, dataset_id) / "masks" / f"{tile_id}.png"
     if mask_path.is_file():
         mask_path.unlink()
+
+    tile_index.update_tile_status(db, tenant_id, dataset_id, tile_id, "unlabeled", commit=False)
+    delete_review_row(db, tenant_id=tenant_id, dataset_id=dataset_id, tile_id=tile_id)
+    db.commit()
     logger.info("annotation deleted tenant=%s dataset_id=%s tile_id=%s", tenant_id, dataset_id, tile_id)

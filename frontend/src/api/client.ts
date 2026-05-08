@@ -270,6 +270,17 @@ export async function saveAnnotation(
   return z.object({ saved: z.boolean(), mask_path: z.string() }).parse(data);
 }
 
+/** 저장된 마스크·DB 레코드 삭제. 타일은 미라벨로 되돌아감. */
+export async function deleteAnnotation(
+  tenantId: string,
+  datasetId: string,
+  tileId: string,
+): Promise<void> {
+  await api.delete(
+    `/api/tenants/${tenantId}/datasets/${datasetId}/tiles/${encodeURIComponent(tileId)}/annotation`,
+  );
+}
+
 export async function getAnnotation(
   tenantId: string,
   datasetId: string,

@@ -7,7 +7,7 @@ type PromptOverlayProps = {
 
 const POINT_RADIUS = 6;
 
-/** SAM 프롬프트(점·박스) 시각화 — 항상 listening=false로 마스크·히트 영역 아래에 두지 않고, 마스크 위에 올려 표시 */
+/** SAM 프롬프트(점·박스) 시각화 — 양성: 초록, 음성: 빨강 */
 export function PromptOverlay({ prompts }: PromptOverlayProps) {
   return (
     <Group listening={false}>

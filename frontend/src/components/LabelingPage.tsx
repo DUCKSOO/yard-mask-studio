@@ -2,6 +2,7 @@ import Konva from "konva";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Layer, Rect, Stage } from "react-konva";
 import {
+  deleteAnnotation,
   getAnnotation,
   getTileImageUrl,
   getTileMetadata,
@@ -11,10 +12,11 @@ import {
   type SamPrompt,
   type TileItem,
 } from "../api/client";
-import { ClassPanel } from "./ClassPanel";
 import { GridOverlay } from "./GridOverlay";
 import { buildClassColorMap, MaskCanvas } from "./MaskCanvas";
 import { PromptOverlay } from "./PromptOverlay";
+import { CanvasTopBar } from "./CanvasTopBar";
+import { FloatingToolBar } from "./FloatingToolBar";
 import { TileNavigator } from "./TileNavigator";
 import { TileImageLayer, useHtmlImage } from "./TileViewer";
 import { ToolBar, type ToolMode } from "./ToolBar";
@@ -74,10 +76,14 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
   const [meta, setMeta] = useState<Record<string, unknown>>({});
 
-  const [tool, setTool] = useState<ToolMode>("point_pos");
+  const [tool, setTool] = useState<ToolMode>("point");
   const [brushRadius, setBrushRadius] = useState(10);
   const [prompts, setPrompts] = useState<SamPrompt[]>([]);
-  const [selectedClassId, setSelectedClassId] = useState(1);
+  /** 마스크 annotation 히스토리와 동일한 커서로 프롬프트 스냅샷 유지 (Undo/Redo 동기화) */
+  const PROMPTS_HISTORY_MAX = 20;
+  const promptsHistoryRef = useRef<SamPrompt[][]>([[]]);
+  const promptsHistoryCursor = useRef(0);
+  const selectedClassId = 1; // occupied 고정
   const [samBusy, setSamBusy] = useState(false);
   /** SAM 요청 중 추가 호출 방지 (setState 비동기와의 경합 대비) */
   const samInFlight = useRef(false);
@@ -88,10 +94,11 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
 
   const [liveCells, setLiveCells] = useState<Uint8Array | null>(null);
 
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 40, y: 40 });
   const panDrag = useRef<{ lastX: number; lastY: number } | null>(null);
-  const boxStart = useRef<{ x: number; y: number } | null>(null);
   /** 브러시 선분 보간용 마지막 포인터 위치 (이미지 좌표, 부동소수) */
   const brushLastPos = useRef<{ x: number; y: number } | null>(null);
   /** 현재 스트로크가 지우개(우클릭 또는 지우개 도구)인지 */
@@ -139,6 +146,8 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     return buildClassColorMap(config.classes.definitions);
   }, [config]);
 
+  // selectedClassId는 occupied(1) 고정; UI 선택 없음
+
   const displayCells = liveCells ?? ann.current;
 
   const tileStats = useMemo(() => {
@@ -152,6 +161,71 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     const t = tiles.find((x) => x.tile_id === selectedTileId);
     return formatTileGridLabel(t?.metadata);
   }, [tiles, selectedTileId]);
+
+  const selectedTileIndex = useMemo(
+    () => tiles.findIndex((t) => t.tile_id === selectedTileId),
+    [tiles, selectedTileId],
+  );
+
+  const canPrevTile = selectedTileIndex > 0;
+  const canNextTile = selectedTileIndex >= 0 && selectedTileIndex < tiles.length - 1;
+
+  const goPrevTile = useCallback(() => {
+    if (selectedTileIndex <= 0) {
+      return;
+    }
+    const id = tiles[selectedTileIndex - 1]?.tile_id;
+    if (id) {
+      setSelectedTileId(id);
+    }
+  }, [tiles, selectedTileIndex]);
+
+  const goNextTile = useCallback(() => {
+    if (selectedTileIndex < 0 || selectedTileIndex >= tiles.length - 1) {
+      return;
+    }
+    const id = tiles[selectedTileIndex + 1]?.tile_id;
+    if (id) {
+      setSelectedTileId(id);
+    }
+  }, [tiles, selectedTileIndex]);
+
+  const resetPromptsHistory = useCallback(() => {
+    promptsHistoryRef.current = [[]];
+    promptsHistoryCursor.current = 0;
+  }, []);
+
+  const pushCellsWithSnapshot = useCallback(
+    (cells: Uint8Array, currentPrompts: SamPrompt[]) => {
+      let h = promptsHistoryRef.current.slice(0, promptsHistoryCursor.current + 1);
+      h.push(currentPrompts.map((p) => ({ ...p })));
+      if (h.length > PROMPTS_HISTORY_MAX) {
+        h = h.slice(-PROMPTS_HISTORY_MAX);
+      }
+      promptsHistoryRef.current = h;
+      promptsHistoryCursor.current = h.length - 1;
+      pushCells(cells);
+    },
+    [pushCells],
+  );
+
+  const handleUndo = useCallback(() => {
+    ann.undo();
+    if (promptsHistoryCursor.current > 0) {
+      promptsHistoryCursor.current -= 1;
+    }
+    const snap = promptsHistoryRef.current[promptsHistoryCursor.current];
+    setPrompts(snap ? snap.map((p) => ({ ...p })) : []);
+  }, [ann]);
+
+  const handleRedo = useCallback(() => {
+    ann.redo();
+    if (promptsHistoryCursor.current < promptsHistoryRef.current.length - 1) {
+      promptsHistoryCursor.current += 1;
+    }
+    const snap = promptsHistoryRef.current[promptsHistoryCursor.current];
+    setPrompts(snap ? snap.map((p) => ({ ...p })) : []);
+  }, [ann]);
 
   const reloadTiles = useCallback(async () => {
     setTileError(null);
@@ -194,6 +268,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     setStatusMsg(null);
     setLiveCells(null);
     brushLastPos.current = null;
+    resetPromptsHistory();
     setPrompts([]);
     try {
       const m = await getTileMetadata(tenantId, datasetId, selectedTileId);
@@ -218,7 +293,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
             existing.class_mask.width,
           );
           reset(tw, th);
-          pushCells(cells);
+          pushCellsWithSnapshot(cells, []);
         }
       } else {
         reset(tw, th);
@@ -226,7 +301,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     } catch (e: unknown) {
       setStatusMsg(e instanceof Error ? e.message : String(e));
     }
-  }, [selectedTileId, tenantId, datasetId, config, reset, pushCells, hasDataset]);
+  }, [selectedTileId, tenantId, datasetId, config, reset, pushCellsWithSnapshot, hasDataset, resetPromptsHistory]);
 
   useEffect(() => {
     void loadTileData();
@@ -262,6 +337,31 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     }
   }, [selectedTileId, ann, annState, tenantId, datasetId, hasDataset, reloadTiles]);
 
+  const handleDeleteLabel = useCallback(async () => {
+    if (!hasDataset || !selectedTileId) {
+      return;
+    }
+    if (
+      !window.confirm(
+        "이 타일의 저장된 라벨(마스크)을 삭제하고 미라벨로 되돌릴까요? 서버의 마스크 파일도 삭제됩니다.",
+      )
+    ) {
+      return;
+    }
+    setStatusMsg(null);
+    try {
+      await deleteAnnotation(tenantId, datasetId, selectedTileId);
+      setStatusMsg("라벨 삭제됨 — 타일이 미라벨로 표시됩니다.");
+      logger.info("annotation deleted (client)", { tenantId, datasetId, tileId: selectedTileId });
+      void reloadTiles();
+      void loadTileData();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setStatusMsg(msg);
+      logger.error("delete annotation failed", msg);
+    }
+  }, [hasDataset, selectedTileId, tenantId, datasetId, reloadTiles, loadTileData]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
@@ -273,12 +373,12 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
       if (e.ctrlKey || e.metaKey) {
         if (k === "z") {
           e.preventDefault();
-          ann.undo();
+          handleUndo();
           return;
         }
         if (k === "y") {
           e.preventDefault();
-          ann.redo();
+          handleRedo();
           return;
         }
         if (k === "s") {
@@ -291,17 +391,14 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
         if (k === "b") {
           setTool("brush");
         }
-        if (k === "e") {
-          setTool("eraser");
-        }
         if (k === "p") {
-          setTool("pan");
+          setTool("point");
         }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [ann, handleSave]);
+  }, [handleUndo, handleRedo, handleSave]);
 
   const { pxX, pxY } = gridPixelSize(config, meta);
 
@@ -409,7 +506,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
             for (let i = 0; i < base.length; i++) {
               next[i] = binary[i] === 1 ? selectedClassId : base[i]!;
             }
-            pushCells(next);
+            pushCellsWithSnapshot(next, promptList);
             msg += " · 마스크 적용됨";
           } catch (decodeErr: unknown) {
             msg += ` · RLE 디코딩 실패: ${decodeErr instanceof Error ? decodeErr.message : String(decodeErr)}`;
@@ -418,7 +515,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
           const lastPos = [...promptList].reverse().find((p) => p.type === "point" && p.label === "positive");
           if (lastPos && lastPos.type === "point") {
             const next = applyPositiveDiskMask(ann.current, w, h, lastPos.x, lastPos.y);
-            pushCells(next);
+            pushCellsWithSnapshot(next, promptList);
             msg += " · 스텁 영역 병합(API가 픽셀 미반환 시)";
           } else {
             msg += " · 양성 점 없음 — 브러시로 편집";
@@ -439,7 +536,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
       config?.sam.multimask_output,
       datasetId,
       hasDataset,
-      pushCells,
+      pushCellsWithSnapshot,
       selectedClassId,
       selectedTileId,
       tenantId,
@@ -455,10 +552,20 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     if (!pos) {
       return;
     }
-    // 우클릭: SAM 프롬프트 모드(점/박스)에서는 제외(음성) 점 추가
+    // 가운데 버튼: 어떤 도구에서든 화면 이동(히트 영역 위에서도 동작)
+    if (e.evt.button === 1) {
+      e.evt.preventDefault();
+      const stage = e.target.getStage();
+      const p = stage?.getPointerPosition();
+      if (p) {
+        panDrag.current = { lastX: p.x, lastY: p.y };
+      }
+      return;
+    }
+    // 우클릭: 점 모드에서 SAM 음성 프롬프트; 브러시 모드에서는 MaskCanvas가 처리
     if (e.evt.button === 2) {
       e.evt.preventDefault();
-      if (tool === "point_pos" || tool === "point_neg" || tool === "box") {
+      if (tool === "point") {
         setPrompts((q) => {
           const next = [...q, { type: "point", x: pos.x, y: pos.y, label: "negative" } as const];
           if (autoSamRun) {
@@ -472,15 +579,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     if (e.evt.button !== 0) {
       return;
     }
-    if (tool === "pan") {
-      const stage = e.target.getStage();
-      const p = stage?.getPointerPosition();
-      if (p) {
-        panDrag.current = { lastX: p.x, lastY: p.y };
-      }
-      return;
-    }
-    if (tool === "point_pos") {
+    if (tool === "point") {
       setPrompts((q) => {
         const next = [...q, { type: "point", x: pos.x, y: pos.y, label: "positive" } as const];
         if (autoSamRun) {
@@ -488,60 +587,16 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
         }
         return next;
       });
-      return;
     }
-    if (tool === "point_neg") {
-      setPrompts((q) => {
-        const next = [...q, { type: "point", x: pos.x, y: pos.y, label: "negative" } as const];
-        if (autoSamRun) {
-          queueMicrotask(() => void handleRunSamWithPrompts(next));
-        }
-        return next;
-      });
-      return;
-    }
-    if (tool === "box") {
-      boxStart.current = { x: pos.x, y: pos.y };
-    }
-  };
-
-  const hitRectMouseUp = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (e.evt.button !== 0) {
-      return;
-    }
-    if (tool !== "box" || !boxStart.current) {
-      return;
-    }
-    const pos = toImageCoords(e);
-    if (!pos) {
-      boxStart.current = null;
-      return;
-    }
-    const x1 = Math.min(boxStart.current.x, pos.x);
-    const x2 = Math.max(boxStart.current.x, pos.x);
-    const y1 = Math.min(boxStart.current.y, pos.y);
-    const y2 = Math.max(boxStart.current.y, pos.y);
-    boxStart.current = null;
-    if (x2 - x1 < 2 || y2 - y1 < 2) {
-      return;
-    }
-    setPrompts((q) => {
-      const boxPrompt: SamPrompt = { type: "box", x1, y1, x2, y2 };
-      const next = [...q, boxPrompt];
-      if (autoSamRun) {
-        queueMicrotask(() => void handleRunSamWithPrompts(next));
-      }
-      return next;
-    });
   };
 
   const onMaskPaintStart = (x: number, y: number, opts?: { eraser?: boolean }) => {
-    if ((tool !== "brush" && tool !== "eraser") || !ann.current) {
+    if (tool !== "brush" || !ann.current) {
       return;
     }
     const nx = clamp(x, 0, iw - 1);
     const ny = clamp(y, 0, ih - 1);
-    const isEraser = tool === "eraser" || Boolean(opts?.eraser);
+    const isEraser = Boolean(opts?.eraser);
     brushStrokeEraser.current = isEraser;
     const classId = isEraser ? 0 : selectedClassId;
     const b = paintBrush(ann.current, iw, ih, nx, ny, brushRadius, classId);
@@ -550,7 +605,7 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   };
 
   const onMaskPaintMove = (x: number, y: number) => {
-    if ((tool !== "brush" && tool !== "eraser") || !liveCells) {
+    if (tool !== "brush" || !liveCells) {
       return;
     }
     const nx = clamp(x, 0, iw - 1);
@@ -572,12 +627,12 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     brushLastPos.current = null;
     brushStrokeEraser.current = false;
     if (liveCells) {
-      ann.pushCells(liveCells);
+      pushCellsWithSnapshot(liveCells, prompts);
       setLiveCells(null);
     }
   };
 
-  const showHitRect = tool !== "brush" && tool !== "eraser";
+  const showHitRect = tool !== "brush";
 
   return (
     <div className="app-root page-labeling-root">
@@ -599,77 +654,124 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
         </p>
       ) : null}
 
-      <div className="app-body">
-        <aside className="sidebar">
-          <button type="button" onClick={() => void reloadTiles()} disabled={!hasDataset}>
-            타일 목록 새로고침
-          </button>
-          {tileStats.total > 0 ? (
-            <div className="tile-progress-bar-wrap" aria-label="진행률">
-              <div
-                className="tile-progress-bar tile-progress-labeled"
-                style={{ width: `${(tileStats.labeled / tileStats.total) * 100}%` }}
+      <div className="app-body labeling-app-body">
+        <aside className={`sidebar ${sidebarOpen ? "" : "sidebar--collapsed"}`}>
+          {sidebarOpen ? (
+            <>
+              <div className="sidebar-toolbar-row">
+                <button
+                  type="button"
+                  className="sidebar-collapse-btn"
+                  onClick={() => setSidebarOpen(false)}
+                  aria-label="사이드바 접기"
+                  title="사이드바 접기"
+                >
+                  ◀
+                </button>
+              </div>
+              <button type="button" onClick={() => void reloadTiles()} disabled={!hasDataset}>
+                타일 목록 새로고침
+              </button>
+              {tileStats.total > 0 ? (
+                <div className="tile-progress-bar-wrap" aria-label="진행률">
+                  <div
+                    className="tile-progress-bar tile-progress-labeled"
+                    style={{ width: `${(tileStats.labeled / tileStats.total) * 100}%` }}
+                  />
+                  <div
+                    className="tile-progress-bar tile-progress-approved"
+                    style={{ width: `${(tileStats.approved / tileStats.total) * 100}%` }}
+                  />
+                </div>
+              ) : null}
+              <p className="tile-progress-text">
+                전체 {tileStats.total} | labeled {tileStats.labeled} | approved {tileStats.approved}
+              </p>
+              {selectedTileId ? (
+                <p className="tile-selection-hint" title={selectedTileId}>
+                  선택 타일:{" "}
+                  {selectedTileGridLabel ? (
+                    <strong className="tile-grid-tag">{selectedTileGridLabel}</strong>
+                  ) : (
+                    <span className="muted">격자 정보 없음</span>
+                  )}
+                  <code className="tile-id-inline">{selectedTileId}</code>
+                </p>
+              ) : null}
+              <TileNavigator
+                tiles={tiles}
+                selectedTileId={selectedTileId}
+                onSelect={(id) => setSelectedTileId(id)}
               />
-              <div
-                className="tile-progress-bar tile-progress-approved"
-                style={{ width: `${(tileStats.approved / tileStats.total) * 100}%` }}
-              />
-            </div>
+              {/* ClassPanel 숨김: 점유/비점유 이진 레이블링이므로 클래스는 occupied(1) 고정 */}
+              <ToolBar tool={tool} prompts={prompts} samMessage={samMessage} />
+              <div className="actions">
+                <button type="button" onClick={() => void loadTileData()} disabled={!selectedTileId}>
+                  다시 불러오기
+                </button>
+              </div>
+              {cfgLoading ? <p>설정 로딩…</p> : null}
+              <p className="meta-hint">
+                그리드: {pxX}×{pxY}px (GSD 메타·설정 기반)
+              </p>
+            </>
           ) : null}
-          <p className="tile-progress-text">
-            전체 {tileStats.total} | labeled {tileStats.labeled} | approved {tileStats.approved}
-          </p>
-          {selectedTileId ? (
-            <p className="tile-selection-hint" title={selectedTileId}>
-              선택 타일:{" "}
-              {selectedTileGridLabel ? (
-                <strong className="tile-grid-tag">{selectedTileGridLabel}</strong>
-              ) : (
-                <span className="muted">격자 정보 없음</span>
-              )}
-              <code className="tile-id-inline">{selectedTileId}</code>
-            </p>
-          ) : null}
-          <TileNavigator
-            tiles={tiles}
-            selectedTileId={selectedTileId}
-            onSelect={(id) => setSelectedTileId(id)}
-          />
-          <ClassPanel config={config} selectedClassId={selectedClassId} onSelect={setSelectedClassId} />
-          <ToolBar
-            tool={tool}
-            onToolChange={setTool}
-            prompts={prompts}
-            onClearPrompts={() => setPrompts([])}
-            onRunSam={handleRunSam}
-            samBusy={samBusy}
-            samMessage={samMessage}
-            autoSamRun={autoSamRun}
-            onAutoSamRunChange={setAutoSamRun}
-            brushRadius={brushRadius}
-            onBrushRadiusChange={setBrushRadius}
-          />
-          <div className="actions">
-            <button type="button" onClick={() => ann.undo()} disabled={!ann.canUndo}>
-              Undo
-            </button>
-            <button type="button" onClick={() => ann.redo()} disabled={!ann.canRedo}>
-              Redo
-            </button>
-            <button type="button" onClick={() => void handleSave()} disabled={!selectedTileId || cfgLoading}>
-              저장
-            </button>
-            <button type="button" onClick={() => void loadTileData()} disabled={!selectedTileId}>
-              다시 불러오기
-            </button>
-          </div>
-          {cfgLoading ? <p>설정 로딩…</p> : null}
-          <p className="meta-hint">
-            그리드: {pxX}×{pxY}px (GSD 메타·설정 기반)
-          </p>
         </aside>
 
+        {!sidebarOpen ? (
+          <button
+            type="button"
+            className="sidebar-expand-btn"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="사이드바 펼치기"
+            title="사이드바 펼치기"
+          >
+            ▶
+          </button>
+        ) : null}
+
         <div className="canvas-host" ref={containerRef}>
+          {hasDataset ? (
+            <>
+              <CanvasTopBar
+                canUndo={ann.canUndo}
+                canRedo={ann.canRedo}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                onClearPrompts={() => {
+                  setPrompts([]);
+                  const cur = promptsHistoryCursor.current;
+                  const h = [...promptsHistoryRef.current];
+                  h[cur] = [];
+                  promptsHistoryRef.current = h;
+                }}
+                promptsEmpty={prompts.length === 0}
+                onSave={() => void handleSave()}
+                saveDisabled={!selectedTileId || cfgLoading}
+                onDeleteLabel={() => void handleDeleteLabel()}
+                deleteLabelDisabled={!selectedTileId || cfgLoading}
+                onRunSam={handleRunSam}
+                samBusy={samBusy}
+                samDisabled={prompts.length === 0}
+                autoSamRun={autoSamRun}
+                onAutoSamRunChange={setAutoSamRun}
+                samMessage={samMessage}
+                canPrevTile={canPrevTile}
+                canNextTile={canNextTile}
+                onPrevTile={goPrevTile}
+                onNextTile={goNextTile}
+                tileLabel={selectedTileGridLabel}
+              />
+              <FloatingToolBar
+                tool={tool}
+                onToolChange={setTool}
+                brushRadius={brushRadius}
+                onBrushRadiusChange={setBrushRadius}
+                boundsWidth={stageSize.w}
+                boundsHeight={stageSize.h}
+              />
+            </>
+          ) : null}
           {!hasDataset ? (
             <div className="canvas-placeholder">
               <p>데이터셋을 선택한 뒤 타일을 고르세요.</p>
@@ -697,9 +799,9 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
                       width={iw}
                       height={ih}
                       colorMap={colorMap}
-                      listening={tool === "brush" || tool === "eraser"}
-                      paintEraserMode={tool === "eraser"}
-                      brushRightEraser={tool === "brush"}
+                      listening={tool === "brush"}
+                      paintEraserMode={false}
+                      brushRightEraser
                       onPaintStart={onMaskPaintStart}
                       onPaintMove={onMaskPaintMove}
                       onPaintEnd={onMaskPaintEnd}
@@ -712,12 +814,6 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
                       fill="rgba(0,0,0,0)"
                       listening={!samBusy}
                       onMouseDown={hitRectMouseDown}
-                      onMouseUp={hitRectMouseUp}
-                      onMouseMove={(e: Konva.KonvaEventObject<MouseEvent>) => {
-                        if (tool === "pan" && panDrag.current && e.evt.buttons === 1) {
-                          onStageMouseMove(e);
-                        }
-                      }}
                     />
                   ) : null}
                   {prompts.length > 0 ? <PromptOverlay prompts={prompts} /> : null}
