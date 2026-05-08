@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request
 from PIL import Image
 
+from backend.app.api.route_params import DatasetId, TenantId, TileId
 from backend.app.api.schemas import SamPredictRequest
 from backend.app.core.tenant import assert_tenant_allowed
 from backend.app.deps import DbSession
@@ -31,14 +32,26 @@ def _tenant(request: Request, tenant_id: str) -> None:
         raise HTTPException(status_code=403, detail=str(e)) from e
 
 
-@router.post("/predict")
+@router.post(
+    "/predict",
+    summary="SAM 세그멘테이션 예측",
+    description="""
+타일 PNG와 프롬프트(점/박스)를 받아 세그멘테이션 백엔드를 호출합니다.
+
+- **현재 응답**은 후보 개수·첫 마스크 shape 위주이며, 픽셀 마스크 배열은 본문에 포함하지 않을 수 있습니다.
+- 체크포인트 미설정·미구현 시 **503** (`SamUnavailableError`).
+""",
+)
 def sam_predict(
-    tenant_id: str,
-    dataset_id: str,
-    tile_id: str,
-    body: SamPredictRequest,
+    tenant_id: TenantId,
+    dataset_id: DatasetId,
+    tile_id: TileId,
     request: Request,
     db: DbSession,
+    body: SamPredictRequest = Body(
+        ...,
+        description="프롬프트 목록 및 선택적 multimask_output.",
+    ),
 ) -> dict:
     _tenant(request, tenant_id)
     if tile_index.get_tile(db, tenant_id, dataset_id, tile_id) is None:

@@ -42,5 +42,41 @@ async def lifespan(app: FastAPI):
     engine.dispose()
 
 
-app = FastAPI(title="yard-mask-studio", lifespan=lifespan)
+app = FastAPI(
+    title="yard-mask-studio",
+    lifespan=lifespan,
+    description="""
+**U-Net 학습용 라벨링** 백엔드 API.
+
+- **원본 GeoTIFF** 경로: `data/source/{tenant_id}/raw_geotiff/{파일명}` (파일명만 API에 전달).
+- **워크플로**: 데이터셋 생성 → 타일 생성(`tiles/generate`) → 타일 목록/이미지/메타 → SAM 예측(선택) → annotation 저장.
+- **테넌트**: `tenant_id`는 서버 `.env`의 `DEFAULT_TENANT_ID`와 같아야 합니다.
+""",
+    openapi_tags=[
+        {
+            "name": "config",
+            "description": "SQLite `active_config` — 타일 크기·그리드·클래스·SAM 설정 등. 서버 기동 시 YAML 시드로 채워질 수 있음.",
+        },
+        {
+            "name": "datasets",
+            "description": "데이터셋 등록 및 GeoTIFF로부터 타일 PNG 일괄 생성.",
+        },
+        {
+            "name": "tiles",
+            "description": "생성된 타일 목록, PNG 이미지, 메타데이터(JSON), 상태 변경.",
+        },
+        {
+            "name": "sam",
+            "description": "타일 이미지 + 프롬프트 기반 세그멘테이션 후보(구현·체크포인트에 따라 503 가능).",
+        },
+        {
+            "name": "annotation",
+            "description": "확정 클래스 마스크(RLE) 저장·조회·삭제 및 `masks/{tile_id}.png` 동기화.",
+        },
+        {
+            "name": "stubs",
+            "description": "Step 5~6 예정 기능. 현재는 501 Not Implemented.",
+        },
+    ],
+)
 app.include_router(api_router, prefix="/api")

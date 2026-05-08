@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request
 
+from backend.app.api.route_params import DatasetId, TenantId
 from backend.app.api.schemas import DatasetCreateRequest, TileGenerateRequest
 from backend.app.core.config_schema import LabelingConfig
 from backend.app.core.tenant import assert_tenant_allowed
@@ -24,9 +25,19 @@ def _tenant(request: Request, tenant_id: str) -> None:
         raise HTTPException(status_code=403, detail=str(e)) from e
 
 
-@router.post("", status_code=201)
+@router.post(
+    "",
+    status_code=201,
+    summary="데이터셋 생성",
+    description="""
+새 데이터셋을 등록하고, **당시 활성 `LabelingConfig` 스냅샷**을 `dataset_config_snapshots`에 고정합니다.
+
+- `source_geotiff`: `data/source/{tenant_id}/raw_geotiff/` 아래 파일명만 전달 (경로 없음).
+- 동일 `dataset_id`가 이미 있으면 **409**.
+""",
+)
 def create_dataset(
-    tenant_id: str,
+    tenant_id: TenantId,
     body: DatasetCreateRequest,
     request: Request,
     db: DbSession,
@@ -44,8 +55,12 @@ def create_dataset(
     return {"dataset_id": row.dataset_id, "id": row.id, "config_snapshot_id": row.config_snapshot_id}
 
 
-@router.get("")
-def list_datasets(tenant_id: str, request: Request, db: DbSession) -> list[dict]:
+@router.get(
+    "",
+    summary="데이터셋 목록",
+    description="테넌트에 속한 데이터셋 요약(`dataset_id`, 스냅샷 id, 원본 파일명, 생성 시각)을 반환합니다.",
+)
+def list_datasets(tenant_id: TenantId, request: Request, db: DbSession) -> list[dict]:
     _tenant(request, tenant_id)
     rows = dataset_service.list_datasets(db, tenant_id)
     return [
@@ -59,8 +74,13 @@ def list_datasets(tenant_id: str, request: Request, db: DbSession) -> list[dict]
     ]
 
 
-@router.get("/{dataset_id}", response_model=None)
-def get_dataset_detail(tenant_id: str, dataset_id: str, request: Request, db: DbSession) -> dict:
+@router.get(
+    "/{dataset_id}",
+    response_model=None,
+    summary="데이터셋 상세",
+    description="단일 데이터셋 메타입니다. 없으면 **404**.",
+)
+def get_dataset_detail(tenant_id: TenantId, dataset_id: DatasetId, request: Request, db: DbSession) -> dict:
     _tenant(request, tenant_id)
     row = dataset_service.get_dataset(db, tenant_id, dataset_id)
     if row is None:
@@ -73,8 +93,13 @@ def get_dataset_detail(tenant_id: str, dataset_id: str, request: Request, db: Db
     }
 
 
-@router.get("/{dataset_id}/config", response_model=LabelingConfig)
-def get_dataset_config(tenant_id: str, dataset_id: str, request: Request, db: DbSession) -> LabelingConfig:
+@router.get(
+    "/{dataset_id}/config",
+    response_model=LabelingConfig,
+    summary="데이터셋에 고정된 라벨링 설정",
+    description="데이터셋 생성 시점에 스냅샷으로 묶인 `LabelingConfig`입니다. 이후 전역 `active_config`를 바꿔도 이 데이터셋의 타일 메타는 이 스냅샷을 참조합니다.",
+)
+def get_dataset_config(tenant_id: TenantId, dataset_id: DatasetId, request: Request, db: DbSession) -> LabelingConfig:
     _tenant(request, tenant_id)
     try:
         return dataset_service.get_dataset_labeling_config(db, tenant_id, dataset_id)
@@ -82,13 +107,26 @@ def get_dataset_config(tenant_id: str, dataset_id: str, request: Request, db: Db
         raise HTTPException(status_code=404, detail="dataset not found") from None
 
 
-@router.post("/{dataset_id}/tiles/generate", status_code=202)
+@router.post(
+    "/{dataset_id}/tiles/generate",
+    status_code=202,
+    summary="타일 일괄 생성",
+    description="""
+활성 설정의 `tiling`을 사용해 GeoTIFF를 읽고, `data/datasets/{tenant}/{dataset}/images/*.png` 및 `metadata/*.json`을 만들고 타일 인덱스를 갱신합니다.
+
+- 본문 `source_geotiff`로 이번 실행만 다른 원본을 지정할 수 있습니다(미지정 시 데이터셋에 저장된 파일명).
+- 원본 파일이 없으면 **400**, 데이터셋이 없으면 **404**.
+""",
+)
 def generate_tiles(
-    tenant_id: str,
-    dataset_id: str,
+    tenant_id: TenantId,
+    dataset_id: DatasetId,
     request: Request,
     db: DbSession,
-    body: TileGenerateRequest | None = None,
+    body: TileGenerateRequest | None = Body(
+        default=None,
+        description="선택. 이번 생성만 다른 `source_geotiff`를 쓸 때 본문에 파일명을 넣습니다. 빈 본문 허용.",
+    ),
 ) -> dict:
     _tenant(request, tenant_id)
     body = body or TileGenerateRequest()
@@ -110,6 +148,15 @@ def generate_tiles(
     return {"tiles_created": n}
 
 
-@router.post("/{dataset_id}/export/unet")
-def export_unet_stub() -> None:
+@router.post(
+    "/{dataset_id}/export/unet",
+    summary="U-Net export (미구현)",
+    description="Step 5에서 구현 예정. 현재 **501**.",
+)
+def export_unet_stub(
+    tenant_id: TenantId,
+    dataset_id: DatasetId,
+    request: Request,
+) -> None:
+    _tenant(request, tenant_id)
     raise HTTPException(status_code=501, detail="Step 5: U-Net export not implemented")

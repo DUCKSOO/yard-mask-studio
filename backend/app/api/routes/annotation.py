@@ -6,10 +6,11 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request
 from sqlalchemy import select
 
 from backend.app.annotation import mask_service
+from backend.app.api.route_params import DatasetId, TenantId, TileId
 from backend.app.api.schemas import AnnotationSaveRequest
 from backend.app.core.db import AnnotationRow
 from backend.app.core.tenant import assert_tenant_allowed
@@ -32,14 +33,26 @@ def _tenant(request: Request, tenant_id: str) -> None:
         raise HTTPException(status_code=403, detail=str(e)) from e
 
 
-@router.post("")
+@router.post(
+    "",
+    summary="annotation 저장",
+    description="""
+클래스 마스크를 **value:length RLE**(행 우선 C-order)로 받아 PNG(`masks/{tile_id}.png`)로 저장하고 DB `annotations`에 JSON을 기록합니다.
+
+- `class_mask`의 height/width는 타일 이미지와 일치해야 합니다.
+- 저장 후 타일 `status`를 요청의 `status`로 맞춥니다.
+""",
+)
 def save_annotation(
-    tenant_id: str,
-    dataset_id: str,
-    tile_id: str,
-    body: AnnotationSaveRequest,
+    tenant_id: TenantId,
+    dataset_id: DatasetId,
+    tile_id: TileId,
     request: Request,
     db: DbSession,
+    body: AnnotationSaveRequest = Body(
+        ...,
+        description="타일 상태·RLE 마스크. `class_mask.counts`는 C-order value:length 형식.",
+    ),
 ) -> dict:
     _tenant(request, tenant_id)
     if tile_index.get_tile(db, tenant_id, dataset_id, tile_id) is None:
@@ -80,11 +93,15 @@ def save_annotation(
     return {"saved": True, "mask_path": str(mask_path.relative_to(repo_root))}
 
 
-@router.get("")
+@router.get(
+    "",
+    summary="annotation 조회",
+    description="저장 시 직렬화한 JSON(`status`, `mask_encoding`, `class_mask`)을 그대로 반환합니다. 없으면 **404**.",
+)
 def get_annotation(
-    tenant_id: str,
-    dataset_id: str,
-    tile_id: str,
+    tenant_id: TenantId,
+    dataset_id: DatasetId,
+    tile_id: TileId,
     request: Request,
     db: DbSession,
 ) -> dict:
@@ -100,11 +117,16 @@ def get_annotation(
     return json.loads(row.annotation_json)
 
 
-@router.delete("", status_code=204)
+@router.delete(
+    "",
+    status_code=204,
+    summary="annotation 삭제",
+    description="DB 행을 지우고 `masks/{tile_id}.png`가 있으면 파일도 삭제합니다.",
+)
 def delete_annotation(
-    tenant_id: str,
-    dataset_id: str,
-    tile_id: str,
+    tenant_id: TenantId,
+    dataset_id: DatasetId,
+    tile_id: TileId,
     request: Request,
     db: DbSession,
 ) -> None:
