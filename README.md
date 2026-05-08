@@ -294,8 +294,11 @@ data/
 
 ## 관련 문서
 
-- [설계 계획서](./labeling-tool-plan-v3.md)
-- [라벨링 기준표](./docs/labeling_guide.md)
-- [API 스펙](./docs/api_spec.yaml)
-- [데이터셋 명세](./docs/dataset_spec.md)
-- [설정 변경 가이드](./docs/config_guide.md)
+| 문서 | 대상 | 내용 |
+|------|------|------|
+| [사용자 가이드](./docs/user_guide.md) | 라벨러·검수자 | 화면 구성, 도구 사용법, 단축키, 작업 순서 |
+| [라벨링 기준표](./docs/labeling_guide.md) | 라벨러·검수자 | 클래스 정의, occupied 판정 기준, 품질 기준 |
+| [설정 변경 가이드](./docs/config_guide.md) | 관리자 | tile_size·GSD 등 런타임 설정 변경 방법 |
+| [데이터셋 명세](./docs/dataset_spec.md) | 개발자·MLOps | export 결과물 디렉터리·mask 포맷 |
+| [API 스펙](./docs/api_spec.yaml) | 개발자 | OpenAPI 엔드포인트 명세 |
+| [설계 계획서](./labeling-tool-plan-v3.md) | 개발자 | 전체 아키텍처·단계별 설계 |
