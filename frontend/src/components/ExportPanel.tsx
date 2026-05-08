@@ -1,6 +1,7 @@
 import axios from "axios";
 import { useCallback, useEffect, useState } from "react";
 import { getExportDownloadUrl, getExportStatus, triggerExport } from "../api/client";
+import { logger } from "../utils/logger";
 
 type Phase = "idle" | "exporting" | "done" | "error";
 
@@ -44,6 +45,15 @@ export function ExportPanel({ tenantId, datasetId }: ExportPanelProps) {
   }, [tenantId, datasetId, reset]);
 
   useEffect(() => {
+    if (phase === "done" && exportId) {
+      logger.info("export completed", { exportId, sampleCount });
+    }
+    if (phase === "error" && errMsg) {
+      logger.warn("export failed", { errMsg });
+    }
+  }, [phase, exportId, sampleCount, errMsg]);
+
+  useEffect(() => {
     if (phase !== "exporting" || !exportId) {
       return;
     }
@@ -85,6 +95,7 @@ export function ExportPanel({ tenantId, datasetId }: ExportPanelProps) {
     try {
       const { export_id } = await triggerExport(tenantId, datasetId);
       setExportId(export_id);
+      logger.info("export started", { tenantId, datasetId, export_id });
     } catch (e: unknown) {
       setPhase("error");
       setErrMsg(formatApiError(e));

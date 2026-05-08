@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -18,6 +19,7 @@ from backend.app.dataset.dataset_exporter import get_export
 from backend.app.deps import DbSession
 
 router = APIRouter(tags=["exports"])
+logger = logging.getLogger(__name__)
 
 
 def _tenant(request: Request, tenant_id: str) -> None:
@@ -44,6 +46,13 @@ def export_status(
     row = get_export(db, tenant_id, export_id)
     if row is None:
         raise HTTPException(status_code=404, detail="export not found")
+    logger.debug(
+        "export/status tenant=%s export_id=%s status=%s samples=%s",
+        tenant_id,
+        export_id,
+        row.status,
+        row.sample_count,
+    )
     return {
         "status": row.status,
         "export_path": row.export_path,
@@ -113,6 +122,14 @@ def export_summary(
         "test": _split_file_len(full, "test"),
     }
 
+    logger.info(
+        "export/summary tenant=%s export_id=%s dataset_id=%s sample_count=%s split=%s",
+        tenant_id,
+        export_id,
+        row.dataset_id,
+        manifest.get("sample_count", row.sample_count),
+        split,
+    )
     return {
         "export_id": row.id,
         "dataset_id": row.dataset_id,
@@ -163,6 +180,7 @@ def export_download(
         pass
     base = str(Path(tmp_path).with_suffix(""))
     zip_path = shutil.make_archive(base, "zip", root_dir=str(full))
+    logger.info("export/download tenant=%s export_id=%s zip=%s", tenant_id, export_id, zip_path)
     cleanup = BackgroundTask(lambda p=zip_path: os.unlink(p) if os.path.isfile(p) else None)
     return FileResponse(
         zip_path,

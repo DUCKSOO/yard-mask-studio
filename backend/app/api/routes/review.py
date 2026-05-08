@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request
@@ -17,6 +18,7 @@ from backend.app.services.review_queue_service import upsert_review_row
 from backend.app.tiling import tile_index
 
 router = APIRouter(tags=["review"])
+logger = logging.getLogger(__name__)
 
 
 def _tenant(request: Request, tenant_id: str) -> None:
@@ -80,6 +82,7 @@ def review_approve(
     upsert_review_row(db, tenant_id=tenant_id, dataset_id=dataset_id, tile_id=tile_id, status="approved", note=None)
     tile_index.update_tile_status(db, tenant_id, dataset_id, tile_id, "approved", commit=False)
     db.commit()
+    logger.info("review/approve tenant=%s dataset_id=%s tile_id=%s", tenant_id, dataset_id, tile_id)
     return {"ok": True, "status": "approved"}
 
 
@@ -109,4 +112,11 @@ def review_reject(
     )
     tile_index.update_tile_status(db, tenant_id, dataset_id, tile_id, "rejected", commit=False)
     db.commit()
+    logger.info(
+        "review/reject tenant=%s dataset_id=%s tile_id=%s note=%s",
+        tenant_id,
+        dataset_id,
+        tile_id,
+        (body.note[:80] + "…") if body.note and len(body.note) > 80 else body.note,
+    )
     return {"ok": True, "status": "rejected"}

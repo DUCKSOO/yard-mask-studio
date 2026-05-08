@@ -6,6 +6,7 @@ import {
   listDatasets,
   type DatasetListItem,
 } from "../api/client";
+import { logger } from "../utils/logger";
 
 function formatApiError(e: unknown): string {
   if (isAxiosError(e)) {
@@ -65,8 +66,10 @@ export function DatasetsPage({
     try {
       const list = await listDatasets(tenantId);
       setRows(list);
+      logger.info("datasets list loaded", { tenantId, count: list.length });
     } catch (e: unknown) {
       setListError(e instanceof Error ? e.message : String(e));
+      logger.error("datasets list failed", e);
     } finally {
       setListLoading(false);
     }
@@ -91,6 +94,7 @@ export function DatasetsPage({
       setCreateMsg(`데이터셋 "${dataset_id}" 생성됨.`);
       onSelectDataset(dataset_id);
       await refreshList();
+      logger.info("dataset created", { tenantId, dataset_id });
     } catch (e: unknown) {
       setCreateErr(formatApiError(e));
     } finally {
@@ -118,6 +122,7 @@ export function DatasetsPage({
       setCreateMsg(`데이터셋 "${dataset_id}" 생성 · 타일 ${tiles_created}개 생성됨.`);
       onSelectDataset(dataset_id);
       await refreshList();
+      logger.info("dataset created with tiles", { tenantId, dataset_id, tiles_created });
     } catch (e: unknown) {
       setCreateErr(formatApiError(e));
     } finally {
@@ -145,6 +150,7 @@ export function DatasetsPage({
       const { tiles_created } = await generateTiles(tenantId, ds, override || fallback);
       setTileMsg(`타일 ${tiles_created}개 생성됨.`);
       await refreshList();
+      logger.info("tiles generated", { tenantId, datasetId: ds, tiles_created });
     } catch (e: unknown) {
       setTileErr(formatApiError(e));
     } finally {

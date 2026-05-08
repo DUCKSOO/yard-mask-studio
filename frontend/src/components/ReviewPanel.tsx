@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { approveReview, getReviewQueue, rejectReview, type ReviewQueueItem } from "../api/client";
+import { logger } from "../utils/logger";
 
 type ReviewFilter = "pending" | "approved" | "rejected" | "all";
 
@@ -49,6 +50,7 @@ export function ReviewPanel({ tenantId, layout = "collapsible" }: ReviewPanelPro
     try {
       await approveReview(tenantId, it.dataset_id, it.tile_id);
       await load();
+      logger.info("review approved", { tenantId, datasetId: it.dataset_id, tileId: it.tile_id });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -66,6 +68,7 @@ export function ReviewPanel({ tenantId, layout = "collapsible" }: ReviewPanelPro
         return next;
       });
       await load();
+      logger.info("review rejected", { tenantId, datasetId: it.dataset_id, tileId: it.tile_id });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     }

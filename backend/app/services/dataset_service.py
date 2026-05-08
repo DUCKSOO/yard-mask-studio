@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from backend.app.tiling.coordinate_utils import gsd_cm_from_geotransform
 from backend.app.tiling.raster_source import GeoTiffRasterSource
 from backend.app.tiling.tile_generator import iter_tile_windows
 from backend.app.tiling import tile_index
+
+logger = logging.getLogger(__name__)
 
 
 def create_dataset(
@@ -109,6 +112,13 @@ def generate_tiles(
     if not tif_path.is_file():
         raise FileNotFoundError(str(tif_path))
 
+    logger.info(
+        "generate_tiles start tenant=%s dataset_id=%s geotiff=%s path=%s",
+        tenant_id,
+        dataset_id,
+        fname,
+        tif_path,
+    )
     cfg = get_dataset_labeling_config(session, tenant_id, dataset_id)
     images_dir = dataset_dir(repo_root, tenant_id, dataset_id) / "images"
     meta_dir = dataset_dir(repo_root, tenant_id, dataset_id) / "metadata"
@@ -176,4 +186,7 @@ def generate_tiles(
                 metadata_json=json.dumps(meta),
             )
             count += 1
+            if count % 50 == 0:
+                logger.debug("generate_tiles progress tenant=%s dataset_id=%s count=%s", tenant_id, dataset_id, count)
+    logger.info("generate_tiles done tenant=%s dataset_id=%s tiles_created=%s", tenant_id, dataset_id, count)
     return count

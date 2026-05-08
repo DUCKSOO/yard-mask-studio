@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException, Request
@@ -15,6 +16,7 @@ from backend.app.deps import DbSession
 from backend.app.services import dataset_service
 
 router = APIRouter(prefix="/tenants/{tenant_id}/datasets", tags=["datasets"])
+logger = logging.getLogger(__name__)
 
 
 def _tenant(request: Request, tenant_id: str) -> None:
@@ -53,6 +55,12 @@ def create_dataset(
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+    logger.info(
+        "dataset created tenant=%s dataset_id=%s source_geotiff=%s",
+        tenant_id,
+        row.dataset_id,
+        body.source_geotiff,
+    )
     return {"dataset_id": row.dataset_id, "id": row.id, "config_snapshot_id": row.config_snapshot_id}
 
 
@@ -132,6 +140,12 @@ def generate_tiles(
     _tenant(request, tenant_id)
     body = body or TileGenerateRequest()
     repo_root: Path = request.app.state.repo_root
+    logger.info(
+        "tiles/generate start tenant=%s dataset_id=%s source_geotiff_override=%s",
+        tenant_id,
+        dataset_id,
+        body.source_geotiff,
+    )
     try:
         n = dataset_service.generate_tiles(
             db,
@@ -146,6 +160,7 @@ def generate_tiles(
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    logger.info("tiles/generate done tenant=%s dataset_id=%s tiles_created=%s", tenant_id, dataset_id, n)
     return {"tiles_created": n}
 
 
@@ -168,6 +183,7 @@ def export_unet(
 ) -> dict:
     _tenant(request, tenant_id)
     repo_root: Path = request.app.state.repo_root
+    logger.info("export/unet start tenant=%s dataset_id=%s", tenant_id, dataset_id)
     try:
         export_id = export_unet_dataset(db, repo_root, tenant_id, dataset_id)
     except KeyError:
@@ -176,4 +192,5 @@ def export_unet(
         raise HTTPException(status_code=400, detail=str(e)) from e
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+    logger.info("export/unet done tenant=%s dataset_id=%s export_id=%s", tenant_id, dataset_id, export_id)
     return {"export_id": export_id}

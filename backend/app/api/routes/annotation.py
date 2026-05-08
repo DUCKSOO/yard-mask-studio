@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,6 +24,7 @@ router = APIRouter(
     prefix="/tenants/{tenant_id}/datasets/{dataset_id}/tiles/{tile_id}/annotation",
     tags=["annotation"],
 )
+logger = logging.getLogger(__name__)
 
 
 def _tenant(request: Request, tenant_id: str) -> None:
@@ -101,6 +103,15 @@ def save_annotation(
             note=None,
         )
         db.commit()
+    logger.info(
+        "annotation saved tenant=%s dataset_id=%s tile_id=%s status=%s mask=%sx%s",
+        tenant_id,
+        dataset_id,
+        tile_id,
+        body.status,
+        m.width,
+        m.height,
+    )
     return {"saved": True, "mask_path": str(mask_path.relative_to(repo_root))}
 
 
@@ -155,3 +166,4 @@ def delete_annotation(
     mask_path = dataset_service.dataset_dir(repo_root, tenant_id, dataset_id) / "masks" / f"{tile_id}.png"
     if mask_path.is_file():
         mask_path.unlink()
+    logger.info("annotation deleted tenant=%s dataset_id=%s tile_id=%s", tenant_id, dataset_id, tile_id)

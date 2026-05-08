@@ -1,5 +1,6 @@
 import axios, { type AxiosInstance } from "axios";
 import { z } from "zod";
+import { logger } from "../utils/logger";
 
 const baseURL = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -7,6 +8,32 @@ export const api: AxiosInstance = axios.create({
   baseURL,
   timeout: 120_000,
 });
+
+api.interceptors.request.use(
+  (config) => {
+    logger.debug("→", config.method?.toUpperCase(), config.url, config.params);
+    return config;
+  },
+  (err) => {
+    logger.error("request setup error", err);
+    return Promise.reject(err);
+  },
+);
+
+api.interceptors.response.use(
+  (res) => {
+    logger.debug("←", res.status, res.config.url);
+    return res;
+  },
+  (err: unknown) => {
+    if (axios.isAxiosError(err)) {
+      logger.error("API 오류", err.response?.status, err.config?.url, err.response?.data);
+    } else {
+      logger.error("API 오류", err);
+    }
+    return Promise.reject(err);
+  },
+);
 
 const TilingConfigSchema = z.object({
   tile_size: z.number(),

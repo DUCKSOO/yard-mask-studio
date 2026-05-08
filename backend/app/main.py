@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.routes import api_router
 from backend.app.core.config import ensure_active_config
 from backend.app.core.db import init_db
+from backend.app.core.logging_config import configure_logging
 from backend.app.core.settings import get_settings
 from backend.app.sam.sam_predictor import LazySam2Predictor
 
@@ -27,6 +28,7 @@ def _ensure_sqlite_dir(database_url: str) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    configure_logging(settings.app_env)
     _ensure_sqlite_dir(settings.database_url)
     engine = create_engine(settings.database_url, future=True)
     init_db(engine)

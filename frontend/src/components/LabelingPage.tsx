@@ -23,6 +23,7 @@ import {
 } from "../stores/annotationStore";
 import { useConfig } from "../stores/configStore";
 import { decodeRleVl, encodeRleVl } from "../utils/rle";
+import { logger } from "../utils/logger";
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
@@ -140,14 +141,18 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     if (!datasetId.trim()) {
       setTiles([]);
       setSelectedTileId(null);
+      logger.debug("reloadTiles skipped: empty datasetId");
       return;
     }
     try {
       const list = await getTiles(tenantId, datasetId, { limit: 500 });
       setTiles(list.map((t) => ({ tile_id: t.tile_id, status: t.status })));
       setSelectedTileId((prev) => prev ?? (list[0]?.tile_id ?? null));
+      logger.info("tiles loaded", { tenantId, datasetId, count: list.length });
     } catch (e: unknown) {
-      setTileError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setTileError(msg);
+      logger.error("reloadTiles failed", msg);
     }
   }, [tenantId, datasetId]);
 
@@ -204,6 +209,12 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
     void loadTileData();
   }, [loadTileData]);
 
+  useEffect(() => {
+    if (selectedTileId) {
+      logger.debug("tile selected", { tenantId, datasetId, selectedTileId });
+    }
+  }, [selectedTileId, tenantId, datasetId]);
+
   const handleSave = useCallback(async () => {
     if (!hasDataset || !selectedTileId || !ann.current || !annState) {
       return;
@@ -219,9 +230,12 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
         class_mask: { height: h, width: w, counts },
       });
       setStatusMsg("저장 완료");
+      logger.info("annotation saved (client)", { tenantId, datasetId, tileId: selectedTileId, w, h });
       void reloadTiles();
     } catch (e: unknown) {
-      setStatusMsg(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setStatusMsg(msg);
+      logger.error("save failed", msg);
     }
   }, [selectedTileId, ann, annState, tenantId, datasetId, hasDataset, reloadTiles]);
 

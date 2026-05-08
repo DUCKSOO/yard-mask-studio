@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +23,7 @@ router = APIRouter(
     prefix="/tenants/{tenant_id}/datasets/{dataset_id}/tiles/{tile_id}/sam",
     tags=["sam"],
 )
+logger = logging.getLogger(__name__)
 
 
 def _tenant(request: Request, tenant_id: str) -> None:
@@ -69,11 +72,27 @@ def sam_predict(
         raise HTTPException(status_code=422, detail=str(e)) from e
 
     backend: SegmentationBackend = request.app.state.sam_predictor
+    logger.info(
+        "sam/predict tenant=%s dataset_id=%s tile_id=%s prompts=%s",
+        tenant_id,
+        dataset_id,
+        tile_id,
+        len(body.prompts),
+    )
+    t0 = time.perf_counter()
     try:
         masks = backend.predict(arr, prompts)
     except SamUnavailableError as e:
+        logger.warning("sam/predict unavailable tenant=%s tile_id=%s: %s", tenant_id, tile_id, e)
         raise HTTPException(status_code=503, detail=str(e)) from e
-
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "sam/predict done tenant=%s tile_id=%s candidates=%s elapsed_ms=%.1f",
+        tenant_id,
+        tile_id,
+        len(masks),
+        elapsed_ms,
+    )
     return {
         "tile_id": tile_id,
         "candidates": len(masks),

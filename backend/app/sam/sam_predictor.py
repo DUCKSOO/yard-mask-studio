@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class SamUnavailableError(RuntimeError):
@@ -34,6 +37,14 @@ class LazySam2Predictor:
         self._checkpoint_path = checkpoint_path
         self._model_cfg = model_cfg
         self._loaded = False
+        if checkpoint_path and Path(checkpoint_path).is_file():
+            logger.info("LazySam2Predictor checkpoint present path=%s cfg=%s", checkpoint_path, model_cfg)
+        else:
+            logger.warning(
+                "LazySam2Predictor no valid checkpoint (path=%s exists=%s)",
+                checkpoint_path,
+                bool(checkpoint_path and Path(checkpoint_path).is_file()),
+            )
 
     def predict(self, image_hwc: np.ndarray, prompts: list[Any]) -> list[np.ndarray]:
         if not self._checkpoint_path or not Path(self._checkpoint_path).is_file():
