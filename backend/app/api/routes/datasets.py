@@ -92,12 +92,13 @@ def delete_dataset_route(
 @router.get(
     "",
     summary="데이터셋 목록",
-    description="테넌트에 속한 데이터셋 요약(`dataset_id`, 스냅샷 id, 원본 파일명, 생성 시각, **tile_count**)을 반환합니다.",
+    description="테넌트에 속한 데이터셋 요약(`dataset_id`, 스냅샷 id, 원본 파일명, 생성 시각, **tile_count**, **labeled_count**)을 반환합니다.",
 )
 def list_datasets(tenant_id: TenantId, request: Request, db: DbSession) -> list[dict]:
     _tenant(request, tenant_id)
     rows = dataset_service.list_datasets(db, tenant_id)
     counts = dataset_service.tile_count_map(db, tenant_id)
+    labeled = dataset_service.labeled_count_map(db, tenant_id)
     return [
         {
             "dataset_id": r.dataset_id,
@@ -105,6 +106,7 @@ def list_datasets(tenant_id: TenantId, request: Request, db: DbSession) -> list[
             "source_geotiff": r.source_geotiff,
             "created_at": r.created_at,
             "tile_count": counts.get(r.dataset_id, 0),
+            "labeled_count": labeled.get(r.dataset_id, 0),
         }
         for r in rows
     ]

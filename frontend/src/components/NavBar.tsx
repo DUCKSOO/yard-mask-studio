@@ -1,4 +1,4 @@
-export type AppPage = "datasets" | "labeling" | "review" | "export";
+export type AppPage = "datasets" | "labeling" | "review";
 
 type NavBarProps = {
   page: AppPage;
@@ -10,7 +10,6 @@ const TABS: { id: AppPage; label: string }[] = [
   { id: "datasets", label: "데이터셋" },
   { id: "labeling", label: "라벨링" },
   { id: "review", label: "검수" },
-  { id: "export", label: "Export" },
 ];
 
 export function NavBar({ page, onPage, datasetId }: NavBarProps) {
@@ -34,7 +33,7 @@ export function NavBar({ page, onPage, datasetId }: NavBarProps) {
           );
         })}
       </div>
-      <div className="app-nav-context" title="라벨링·Export·검수에 사용되는 데이터셋">
+      <div className="app-nav-context" title="라벨링·검수에 사용되는 데이터셋">
         <span className="app-nav-context-label">선택 데이터셋</span>
         <code className="app-nav-context-value">{datasetId || "—"}</code>
       </div>

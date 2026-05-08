@@ -164,6 +164,7 @@ const DatasetListItemSchema = z.object({
   source_geotiff: z.string().nullable(),
   created_at: z.string(),
   tile_count: z.number(),
+  labeled_count: z.number(),
 });
 
 export type DatasetListItem = z.infer<typeof DatasetListItemSchema>;

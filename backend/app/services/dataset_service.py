@@ -87,6 +87,16 @@ def tile_count_map(session: Session, tenant_id: str) -> dict[str, int]:
     return {str(dataset_id): int(cnt) for dataset_id, cnt in rows}
 
 
+def labeled_count_map(session: Session, tenant_id: str) -> dict[str, int]:
+    """TileRow.status == 'labeled' 인 타일 수 (데이터셋별)."""
+    rows = session.execute(
+        select(TileRow.dataset_id, func.count())
+        .where(TileRow.tenant_id == tenant_id, TileRow.status == "labeled")
+        .group_by(TileRow.dataset_id)
+    ).all()
+    return {str(dataset_id): int(cnt) for dataset_id, cnt in rows}
+
+
 def delete_dataset(session: Session, repo_root: Path, tenant_id: str, dataset_id: str) -> None:
     """데이터셋 DB 레코드·연관 타일/어노테이션·검수·export·디스크 폴더를 삭제합니다."""
     dr = get_dataset(session, tenant_id, dataset_id)

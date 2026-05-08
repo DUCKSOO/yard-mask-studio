@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { DatasetsPage } from "./components/DatasetsPage";
-import { ExportPage } from "./components/ExportPage";
 import { LabelingPage } from "./components/LabelingPage";
 import { NavBar, type AppPage } from "./components/NavBar";
 import { ReviewPage } from "./components/ReviewPage";
@@ -38,7 +37,6 @@ function AppShell() {
       ) : null}
       {page === "labeling" ? <LabelingPage tenantId={tenantId} datasetId={datasetId} /> : null}
       {page === "review" ? <ReviewPage tenantId={tenantId} /> : null}
-      {page === "export" ? <ExportPage tenantId={tenantId} datasetId={datasetId} /> : null}
     </div>
   );
 }

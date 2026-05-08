@@ -620,6 +620,11 @@ body {
   gap: 0.35rem;
 }
 
+.config-impact-widget--embedded {
+  border-top: none;
+  padding-top: 0;
+}
+
 .config-impact-title {
   margin: 0;
   font-size: 0.95rem;
@@ -1215,6 +1220,10 @@ body {
   box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
 }
 
+.datasets-tilegen-toast.datasets-toast--stacked {
+  bottom: 7rem;
+}
+
 .datasets-upload-toast-inner {
   display: flex;
   gap: 0.75rem;
@@ -1501,7 +1510,141 @@ body {
 }
 
 .datasets-actions-head {
+  width: 10rem;
+}
+
+.datasets-labeled-head {
+  width: 3.5rem;
+  text-align: center;
+}
+
+.datasets-labeled-cell {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.datasets-labeled-count {
+  font-weight: 600;
+  color: #0369a1;
+}
+
+.datasets-export-head {
   width: 11rem;
+}
+
+.datasets-export-cell {
+  vertical-align: middle;
+  font-size: 0.78rem;
+  max-width: 12rem;
+  white-space: normal;
+}
+
+.datasets-export-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.datasets-export-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.datasets-export-download {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #1d4ed8;
+}
+
+.datasets-export-spinner {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid #e2e8f0;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: datasets-upload-spin 0.65s linear infinite;
+  flex-shrink: 0;
+}
+
+.datasets-export-error-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.datasets-export-err-inline {
+  font-size: 0.72rem;
+}
+
+.datasets-bulk-export-btn {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  border: 1px solid #86efac;
+  background: #ecfdf5;
+  color: #166534;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.datasets-bulk-export-btn:hover:not(:disabled) {
+  background: #d1fae5;
+}
+
+.datasets-bulk-export-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.datasets-impact-modal-backdrop {
+  z-index: 1100;
+}
+
+.datasets-impact-modal-dialog {
+  max-width: min(96vw, 38rem);
+}
+
+.datasets-impact-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.datasets-impact-modal-lead {
+  margin: 0 0 0.25rem;
+}
+
+.datasets-impact-modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.datasets-impact-modal-confirm {
+  padding: 0.4rem 0.75rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #86efac;
+  background: #ecfdf5;
+  color: #166534;
+  cursor: pointer;
+}
+
+.datasets-impact-modal-confirm:hover:not(:disabled) {
+  background: #d1fae5;
+}
+
+.datasets-impact-modal-confirm:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .datasets-actions-cell {

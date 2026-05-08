@@ -5,6 +5,8 @@ import { useConfig } from "../stores/configStore";
 
 type ConfigImpactWidgetProps = {
   tenantId: string;
+  /** 모달 등 안쪽에 넣을 때 상단 제목(h3) 숨김 */
+  embedded?: boolean;
 };
 
 function formatApiError(e: unknown): string {
@@ -24,7 +26,7 @@ function formatApiError(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-export function ConfigImpactWidget({ tenantId }: ConfigImpactWidgetProps) {
+export function ConfigImpactWidget({ tenantId, embedded = false }: ConfigImpactWidgetProps) {
   const { config } = useConfig();
   const [tileSize, setTileSize] = useState("");
   const [tileOverlap, setTileOverlap] = useState("");
@@ -70,8 +72,8 @@ export function ConfigImpactWidget({ tenantId }: ConfigImpactWidgetProps) {
   };
 
   return (
-    <div className="config-impact-widget">
-      <h3 className="config-impact-title">설정 영향도</h3>
+    <div className={`config-impact-widget${embedded ? " config-impact-widget--embedded" : ""}`}>
+      {embedded ? null : <h3 className="config-impact-title">설정 영향도</h3>}
       <p className="config-impact-hint">tile_size / overlap 변경 시 예상 타일 수(대략).</p>
       <label className="config-impact-field">
         tile_size
