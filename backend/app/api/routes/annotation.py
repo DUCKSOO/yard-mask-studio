@@ -16,6 +16,7 @@ from backend.app.core.db import AnnotationRow
 from backend.app.core.tenant import assert_tenant_allowed
 from backend.app.deps import DbSession
 from backend.app.services import dataset_service
+from backend.app.services.review_queue_service import upsert_review_row
 from backend.app.tiling import tile_index
 
 router = APIRouter(
@@ -90,6 +91,16 @@ def save_annotation(
         row.updated_at = now
     db.commit()
     tile_index.update_tile_status(db, tenant_id, dataset_id, tile_id, body.status)
+    if body.status == "labeled":
+        upsert_review_row(
+            db,
+            tenant_id=tenant_id,
+            dataset_id=dataset_id,
+            tile_id=tile_id,
+            status="pending",
+            note=None,
+        )
+        db.commit()
     return {"saved": True, "mask_path": str(mask_path.relative_to(repo_root))}
 
 

@@ -78,8 +78,12 @@ app = FastAPI(
             "description": "U-Net 학습용 export 생성 결과 조회 및 ZIP 다운로드.",
         },
         {
+            "name": "review",
+            "description": "검수 큐 조회 및 타일 단위 승인/거부.",
+        },
+        {
             "name": "stubs",
-            "description": "Step 6 예정(검수 큐 등). 현재는 501 Not Implemented.",
+            "description": "예약용 빈 라우터(향후 확장).",
         },
     ],
 )

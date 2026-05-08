@@ -94,6 +94,22 @@ class ExportRow(Base):
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ReviewQueueRow(Base):
+    """타일 검수 큐 (타일당 최대 1행)."""
+
+    __tablename__ = "review_queue"
+    __table_args__ = (UniqueConstraint("tenant_id", "dataset_id", "tile_id", name="uq_review_queue_scope"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(Text, nullable=False)
+    dataset_id: Mapped[str] = mapped_column(Text, nullable=False)
+    tile_id: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 def init_db(engine) -> None:
     Base.metadata.create_all(bind=engine)
 

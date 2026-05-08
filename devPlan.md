@@ -20,8 +20,11 @@ todos:
   - id: step5-export
     content: "Step 5: Export + U-Net dataloader smoke test"
     status: completed
+  - id: step6-review-queue
+    content: "Step 6-A: 검수 큐 API + review_queue 테이블 + 프론트 ReviewPanel"
+    status: completed
   - id: step6-full
-    content: "Step 6: Phase 3~5 워크플로 확장 (brush, 검수 큐, 학습 연동)"
+    content: "Step 6-B: TileNavigator, brush 확장, export 정식화, 학습 연동"
     status: pending
 isProject: false
 ---
@@ -203,7 +206,14 @@ GUI로 라벨링·저장한 데이터를 export해 U-Net dataloader가 동일하
 
 **의존**: MVP(Step 0~5) 완료 후
 
-- Phase 3: TileNavigator (타일 목록·상태 필터) + brush 편집 + 검수 큐
+**진행 상황**
+
+- **완료 (6-A)**: 검수 큐 — `review_queue` 테이블, `GET .../review/queue`, approve/reject API, 라벨 저장(`labeled`) 시 큐에 `pending` 등록, 프론트 `ReviewPanel`.
+- **남음 (6-B)**: TileNavigator (타일 목록·상태 필터 UI) + brush 편집 강화 + export API 정식화 + 설정 영향도 분석 + 학습 연동·대량 라벨링.
+
+원래 범위(참고):
+
+- Phase 3: TileNavigator + brush + 검수 큐
 - Phase 4: export API 정식화 + 설정 영향도 분석 API
 - Phase 5: 100~300장 라벨링 → U-Net 1차 학습 → 가이드 보완
 

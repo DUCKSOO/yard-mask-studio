@@ -13,6 +13,7 @@ import {
 import { ClassPanel } from "./components/ClassPanel";
 import { GridOverlay } from "./components/GridOverlay";
 import { buildClassColorMap, MaskCanvas } from "./components/MaskCanvas";
+import { ReviewPanel } from "./components/ReviewPanel";
 import { TileImageLayer, useHtmlImage } from "./components/TileViewer";
 import { ToolBar, type ToolMode } from "./components/ToolBar";
 import {
@@ -457,6 +458,7 @@ function InnerApp() {
           <p className="meta-hint">
             그리드: {pxX}×{pxY}px (GSD 메타·설정 기반)
           </p>
+          <ReviewPanel tenantId={tenantId} />
         </aside>
 
         <div className="canvas-host" ref={containerRef}>

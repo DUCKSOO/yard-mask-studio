@@ -107,6 +107,16 @@ export const AnnotationRecordSchema = z.object({
 
 export type AnnotationRecord = z.infer<typeof AnnotationRecordSchema>;
 
+export const ReviewQueueItemSchema = z.object({
+  tile_id: z.string(),
+  dataset_id: z.string(),
+  status: z.string(),
+  note: z.string().nullable(),
+  created_at: z.string(),
+});
+
+export type ReviewQueueItem = z.infer<typeof ReviewQueueItemSchema>;
+
 export async function getConfig(): Promise<LabelingConfig> {
   const { data } = await api.get("/api/config");
   return LabelingConfigSchema.parse(data);
@@ -193,4 +203,40 @@ export async function getAnnotation(
     }
     throw e;
   }
+}
+
+export async function getReviewQueue(
+  tenantId: string,
+  opts?: { status?: string },
+): Promise<ReviewQueueItem[]> {
+  const params: Record<string, string> = {};
+  if (opts?.status !== undefined) {
+    params.status = opts.status;
+  }
+  const { data } = await api.get(`/api/tenants/${tenantId}/review/queue`, { params });
+  return z.array(ReviewQueueItemSchema).parse(data);
+}
+
+export async function approveReview(
+  tenantId: string,
+  datasetId: string,
+  tileId: string,
+): Promise<{ ok: boolean; status: string }> {
+  const { data } = await api.post(
+    `/api/tenants/${tenantId}/datasets/${datasetId}/tiles/${encodeURIComponent(tileId)}/review/approve`,
+  );
+  return z.object({ ok: z.boolean(), status: z.string() }).parse(data);
+}
+
+export async function rejectReview(
+  tenantId: string,
+  datasetId: string,
+  tileId: string,
+  note?: string,
+): Promise<{ ok: boolean; status: string }> {
+  const { data } = await api.post(
+    `/api/tenants/${tenantId}/datasets/${datasetId}/tiles/${encodeURIComponent(tileId)}/review/reject`,
+    { note: note ?? null },
+  );
+  return z.object({ ok: z.boolean(), status: z.string() }).parse(data);
 }

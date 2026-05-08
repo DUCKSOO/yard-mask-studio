@@ -71,12 +71,21 @@ def get_tile(session: Session, tenant_id: str, dataset_id: str, tile_id: str) ->
     return session.scalars(stmt).first()
 
 
-def update_tile_status(session: Session, tenant_id: str, dataset_id: str, tile_id: str, status: str) -> TileRow | None:
+def update_tile_status(
+    session: Session,
+    tenant_id: str,
+    dataset_id: str,
+    tile_id: str,
+    status: str,
+    *,
+    commit: bool = True,
+) -> TileRow | None:
     row = get_tile(session, tenant_id, dataset_id, tile_id)
     if row is None:
         return None
     row.status = status
     row.updated_at = datetime.now(UTC).isoformat()
-    session.commit()
-    session.refresh(row)
+    if commit:
+        session.commit()
+        session.refresh(row)
     return row

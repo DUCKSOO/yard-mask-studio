@@ -100,3 +100,15 @@ class ExportStatusResponse(BaseModel):
     sample_count: int = Field(description="export에 포함된 타일(샘플) 수.")
     dataset_id: str = Field(description="원본 데이터셋 ID.")
     tenant_id: str = Field(description="테넌트 ID.")
+
+
+class ReviewRejectBody(BaseModel):
+    note: str | None = Field(default=None, description="거부 사유(선택).")
+
+
+class ReviewQueueItem(BaseModel):
+    tile_id: str
+    dataset_id: str
+    status: str
+    note: str | None
+    created_at: str

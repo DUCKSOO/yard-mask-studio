@@ -126,3 +126,80 @@ body {
   color: #15803d;
   margin: 0.25rem 0;
 }
+
+.review-panel {
+  margin-top: auto;
+  padding-top: 0.5rem;
+  border-top: 1px solid #ddd;
+}
+
+.review-panel-toggle {
+  width: 100%;
+  text-align: left;
+}
+
+.review-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.review-queue-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.review-queue-item {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.4rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.review-queue-meta .muted {
+  color: #666;
+}
+
+.review-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.review-status-pending {
+  color: #b45309;
+}
+
+.review-status-approved {
+  color: #15803d;
+}
+
+.review-status-rejected {
+  color: #b91c1c;
+}
+
+.review-note {
+  font-size: 0.72rem;
+  color: #444;
+}
+
+.review-queue-actions input {
+  width: 100%;
+  margin: 0.25rem 0;
+  padding: 0.25rem;
+  box-sizing: border-box;
+}
+
+.review-btns {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.review-queue-list .muted {
+  color: #888;
+  font-size: 0.8rem;
+}
