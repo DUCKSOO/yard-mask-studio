@@ -5,10 +5,13 @@ type ReviewFilter = "pending" | "approved" | "rejected" | "all";
 
 type ReviewPanelProps = {
   tenantId: string;
+  /** collapsible: 사이드바용 토글. full: 검수 전용 페이지(항상 펼침). */
+  layout?: "collapsible" | "full";
 };
 
-export function ReviewPanel({ tenantId }: ReviewPanelProps) {
-  const [open, setOpen] = useState(false);
+export function ReviewPanel({ tenantId, layout = "collapsible" }: ReviewPanelProps) {
+  const isFull = layout === "full";
+  const [open, setOpen] = useState(isFull);
   const [filter, setFilter] = useState<ReviewFilter>("pending");
   const [items, setItems] = useState<ReviewQueueItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,11 +32,17 @@ export function ReviewPanel({ tenantId }: ReviewPanelProps) {
   }, [tenantId, filter]);
 
   useEffect(() => {
-    if (!open) {
+    if (isFull) {
+      setOpen(true);
+    }
+  }, [isFull]);
+
+  useEffect(() => {
+    if (!open && !isFull) {
       return;
     }
     void load();
-  }, [open, load]);
+  }, [open, load, isFull]);
 
   const onApprove = async (it: ReviewQueueItem) => {
     setError(null);
@@ -63,11 +72,13 @@ export function ReviewPanel({ tenantId }: ReviewPanelProps) {
   };
 
   return (
-    <section className="review-panel">
-      <button type="button" className="review-panel-toggle" onClick={() => setOpen((o) => !o)}>
-        {open ? "▼ 검수 큐 숨기기" : "▶ 검수 큐"}
-      </button>
-      {open ? (
+    <section className={`review-panel ${isFull ? "review-panel-full" : ""}`}>
+      {!isFull ? (
+        <button type="button" className="review-panel-toggle" onClick={() => setOpen((o) => !o)}>
+          {open ? "▼ 검수 큐 숨기기" : "▶ 검수 큐"}
+        </button>
+      ) : null}
+      {open || isFull ? (
         <div className="review-panel-body">
           <label>
             상태 필터

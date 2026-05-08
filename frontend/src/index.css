@@ -10,7 +10,13 @@ body {
 .app-root {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
+}
+
+.page-labeling-root.app-root {
+  height: auto;
+  min-height: 0;
 }
 
 .app-header {
@@ -510,4 +516,263 @@ body {
   outline: 2px solid #fbbf24;
   border: 2px solid #fff;
   box-shadow: 0 0 0 1px #1e293b;
+}
+
+/* --- 앱 셸 · 다중 화면 --- */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-header-shell {
+  flex-shrink: 0;
+}
+
+.app-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid #cbd5e1;
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+
+.app-nav-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.app-nav-tab {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+
+.app-nav-tab:hover {
+  background: #f1f5f9;
+}
+
+.app-nav-tab.active {
+  background: #2563eb;
+  color: #fff;
+  border-color: #1d4ed8;
+}
+
+.app-nav-context {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.app-nav-context-label {
+  margin-right: 0.35rem;
+}
+
+.app-nav-context-value {
+  background: #e2e8f0;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.78rem;
+}
+
+.page-header {
+  padding: 1rem 1.25rem 0.5rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.page-header h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+}
+
+.page-sub {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #64748b;
+  max-width: 56rem;
+}
+
+.page-datasets,
+.page-review,
+.page-export {
+  flex: 1;
+  overflow: auto;
+  padding-bottom: 2rem;
+}
+
+.muted {
+  color: #64748b;
+}
+
+.datasets-section {
+  padding: 1rem 1.25rem;
+  max-width: 56rem;
+}
+
+.datasets-section h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.datasets-tenant {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  max-width: 20rem;
+}
+
+.datasets-toolbar {
+  margin-bottom: 0.5rem;
+}
+
+.datasets-table-wrap {
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.datasets-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.datasets-table th,
+.datasets-table td {
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.datasets-table thead th {
+  background: #f8fafc;
+  font-weight: 600;
+}
+
+.datasets-table tbody tr {
+  cursor: pointer;
+}
+
+.datasets-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.datasets-table tbody tr.selected {
+  background: #dbeafe;
+}
+
+.datasets-actions-cell {
+  width: 7rem;
+  white-space: nowrap;
+}
+
+.datasets-goto-label {
+  padding: 0.25rem 0.45rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.datasets-create-toggle {
+  width: 100%;
+  max-width: 56rem;
+  text-align: left;
+  font-weight: 600;
+  padding: 0.5rem 0.35rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fafafa;
+  cursor: pointer;
+}
+
+.datasets-create-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  max-width: 28rem;
+}
+
+.datasets-create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.datasets-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.datasets-msg {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  color: #166534;
+}
+
+.datasets-err {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  color: #b91c1c;
+}
+
+.labeling-banner {
+  padding: 0.35rem 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fafafa;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.labeling-inline-msg {
+  margin: 0.25rem 1rem;
+  font-size: 0.85rem;
+}
+
+.page-labeling-root {
+  flex: 1;
+  min-height: 0;
+}
+
+.canvas-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #64748b;
+  font-size: 0.95rem;
+}
+
+.export-page-section {
+  padding: 1rem 1.25rem;
+  max-width: 32rem;
+}
+
+.export-page-h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.review-panel-full {
+  padding: 0 1.25rem 2rem;
+  max-width: 48rem;
+}
+
+.review-panel-full .review-panel-body {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+  background: #fff;
+}
+
+.review-panel-full .review-queue-list {
+  max-height: none;
 }

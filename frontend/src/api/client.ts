@@ -122,6 +122,61 @@ export async function getConfig(): Promise<LabelingConfig> {
   return LabelingConfigSchema.parse(data);
 }
 
+const DatasetCreateResponseSchema = z.object({
+  dataset_id: z.string(),
+  id: z.number(),
+  config_snapshot_id: z.number(),
+});
+
+const DatasetListItemSchema = z.object({
+  dataset_id: z.string(),
+  config_snapshot_id: z.number(),
+  source_geotiff: z.string().nullable(),
+  created_at: z.string(),
+});
+
+export type DatasetListItem = z.infer<typeof DatasetListItemSchema>;
+
+export async function listDatasets(tenantId: string): Promise<DatasetListItem[]> {
+  const { data } = await api.get(`/api/tenants/${tenantId}/datasets`);
+  return z.array(DatasetListItemSchema).parse(data);
+}
+
+export async function createDataset(
+  tenantId: string,
+  datasetId: string,
+  sourceGeotiff: string | null,
+): Promise<{ dataset_id: string }> {
+  const body: { dataset_id: string; source_geotiff?: string | null } = { dataset_id: datasetId };
+  if (sourceGeotiff !== null && sourceGeotiff.trim() !== "") {
+    body.source_geotiff = sourceGeotiff.trim();
+  } else {
+    body.source_geotiff = null;
+  }
+  const { data } = await api.post(`/api/tenants/${tenantId}/datasets`, body);
+  return DatasetCreateResponseSchema.pick({ dataset_id: true }).parse(data);
+}
+
+const TileGenerateResponseSchema = z.object({
+  tiles_created: z.number(),
+});
+
+export async function generateTiles(
+  tenantId: string,
+  datasetId: string,
+  sourceGeotiff?: string,
+): Promise<{ tiles_created: number }> {
+  const body =
+    sourceGeotiff !== undefined && sourceGeotiff.trim() !== ""
+      ? { source_geotiff: sourceGeotiff.trim() }
+      : {};
+  const { data } = await api.post(
+    `/api/tenants/${tenantId}/datasets/${encodeURIComponent(datasetId)}/tiles/generate`,
+    body,
+  );
+  return TileGenerateResponseSchema.parse(data);
+}
+
 export async function getTiles(
   tenantId: string,
   datasetId: string,
