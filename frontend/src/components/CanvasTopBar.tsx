@@ -120,7 +120,10 @@ export function CanvasTopBar({
         >
           {samBusy ? "SAM…" : "SAM 실행"}
         </button>
-        <label className="canvas-top-bar-auto">
+        <label
+          className="canvas-top-bar-auto"
+          title="켜면 양성(좌클릭)마다 프롬프트를 비우고 즉시 SAM(자재 1개씩). 끄면 양성을 여러 개 쌓은 뒤 SAM 실행으로 합친 추론 가능."
+        >
           <input
             type="checkbox"
             checked={autoSamRun}

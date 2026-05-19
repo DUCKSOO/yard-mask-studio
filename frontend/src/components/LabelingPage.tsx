@@ -27,6 +27,7 @@ import {
   useAnnotation,
 } from "../stores/annotationStore";
 import { useConfig } from "../stores/configStore";
+import { buildSamInferencePlan } from "../utils/samPromptGroups";
 import { decodeRleVl, encodeRleVl } from "../utils/rle";
 import { logger } from "../utils/logger";
 import { compareTilesForNavigator, formatTileGridLabel } from "../utils/tileGrid";
@@ -594,51 +595,96 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
   };
 
   const handleRunSamWithPrompts = useCallback(
-    async (promptList: SamPrompt[]) => {
-      if (!hasDataset || !selectedTileId || !ann.current || !annState || promptList.length === 0) {
+    async (promptList: SamPrompt[], options?: { clearOnSuccess?: boolean }) => {
+      if (!hasDataset || !selectedTileId || !ann.current || !annState) {
         return;
       }
+      if (promptList.length === 0) {
+        return;
+      }
+
+      const plan = buildSamInferencePlan(promptList);
+      if (plan.groups.length === 0) {
+        setSamMessage("SAM: 양성 점 또는 박스를 먼저 찍으세요.");
+        return;
+      }
+
       if (samInFlight.current) {
         return;
       }
       samInFlight.current = true;
       setSamBusy(true);
       setSamMessage(null);
+      const w = annState.width;
+      const h = annState.height;
+      const multimask = config?.sam.multimask_output;
+
       try {
-        const res = await samPredict(
-          tenantId,
-          datasetId,
-          selectedTileId,
-          promptList,
-          config?.sam.multimask_output,
-        );
-        const w = annState.width;
-        const h = annState.height;
-        let msg = `SAM 응답: 후보 ${res.candidates}개`;
-        if (res.masks_rle.length > 0) {
-          try {
-            const binary = decodeRleVl(res.masks_rle[0], h, w);
-            const base = ann.current;
-            const next = new Uint8Array(base.length);
-            for (let i = 0; i < base.length; i++) {
-              next[i] = binary[i] === 1 ? selectedClassId : base[i]!;
+        const base = ann.current;
+        const next = new Uint8Array(base.length);
+        for (let i = 0; i < base.length; i++) {
+          next[i] = base[i]!;
+        }
+
+        let appliedMaskPixel = false;
+        let usedStub = false;
+        const parts: string[] = [];
+
+        for (let gi = 0; gi < plan.groups.length; gi++) {
+          const group = plan.groups[gi]!;
+          const res = await samPredict(tenantId, datasetId, selectedTileId, group, multimask);
+          parts.push(`#${gi + 1} 후보 ${res.candidates}`);
+
+          if (res.masks_rle.length > 0) {
+            try {
+              const binary = decodeRleVl(res.masks_rle[0]!, h, w);
+              for (let i = 0; i < base.length; i++) {
+                if (binary[i] === 1) {
+                  next[i] = selectedClassId;
+                }
+              }
+              appliedMaskPixel = true;
+            } catch (decodeErr: unknown) {
+              const m =
+                decodeErr instanceof Error ? decodeErr.message : String(decodeErr);
+              setSamMessage(`SAM RLE 디코딩 실패 (#${gi + 1}): ${m}`);
+              return;
             }
-            pushCellsWithSnapshot(next, promptList);
-            msg += " · 마스크 적용됨";
-          } catch (decodeErr: unknown) {
-            msg += ` · RLE 디코딩 실패: ${decodeErr instanceof Error ? decodeErr.message : String(decodeErr)}`;
+          } else if (res.candidates > 0 && res.mask_shape.length >= 2) {
+            const lastPos = [...group]
+              .reverse()
+              .find((p) => p.type === "point" && p.label === "positive");
+            if (lastPos && lastPos.type === "point") {
+              const afterDisk = applyPositiveDiskMask(next, w, h, lastPos.x, lastPos.y);
+              for (let i = 0; i < base.length; i++) {
+                if (afterDisk[i] === 1) {
+                  next[i] = selectedClassId;
+                }
+              }
+              usedStub = true;
+            }
           }
-        } else if (res.candidates > 0 && res.mask_shape.length >= 2) {
-          const lastPos = [...promptList].reverse().find((p) => p.type === "point" && p.label === "positive");
-          if (lastPos && lastPos.type === "point") {
-            const next = applyPositiveDiskMask(ann.current, w, h, lastPos.x, lastPos.y);
-            pushCellsWithSnapshot(next, promptList);
-            msg += " · 스텁 영역 병합(API가 픽셀 미반환 시)";
-          } else {
-            msg += " · 양성 점 없음 — 브러시로 편집";
+        }
+
+        let msg = `SAM ${plan.groups.length}회 추론 (${parts.join(", ")})`;
+        if (plan.pointsIgnoredForBox) {
+          msg += " · 박스와 함께 찍은 점은 SAM에 포함하지 않음";
+        }
+        if (plan.negativesIgnoredForMultiPositive) {
+          msg += " · 다중 양성일 때 음성 점은 SAM에 넣지 않음";
+        }
+
+        const didApply = appliedMaskPixel || usedStub;
+        if (didApply) {
+          const snapshotPrompts = options?.clearOnSuccess ? [] : promptList;
+          pushCellsWithSnapshot(next, snapshotPrompts);
+          if (options?.clearOnSuccess) {
+            setPrompts([]);
           }
+          msg += appliedMaskPixel ? " · 마스크 적용됨" : "";
+          msg += usedStub ? " · 일부 스텁 디스크(응답 픽셀 없음)" : "";
         } else {
-          msg += " · 후보 없음 — 브러시로 편집";
+          msg += " · 변경 없음 — 브러시로 편집";
         }
         setSamMessage(msg);
       } catch (e: unknown) {
@@ -684,9 +730,22 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
       e.evt.preventDefault();
       if (tool === "point") {
         setPrompts((q) => {
-          const next = [...q, { type: "point", x: pos.x, y: pos.y, label: "negative" } as const];
+          const hasSeed = q.some(
+            (x) => x.type === "box" || (x.type === "point" && x.label === "positive"),
+          );
+          const neg = { type: "point", x: pos.x, y: pos.y, label: "negative" } as const;
+          if (!hasSeed) {
+            const next = [...q, neg];
+            if (autoSamRun) {
+              queueMicrotask(() => {
+                setSamMessage("SAM: 먼저 양성 점(좌클릭)을 찍으세요.");
+              });
+            }
+            return next;
+          }
+          const next = [...q, neg];
           if (autoSamRun) {
-            queueMicrotask(() => void handleRunSamWithPrompts(next));
+            queueMicrotask(() => void handleRunSamWithPrompts(next, { clearOnSuccess: false }));
           }
           return next;
         });
@@ -697,13 +756,13 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
       return;
     }
     if (tool === "point") {
-      setPrompts((q) => {
-        const next = [...q, { type: "point", x: pos.x, y: pos.y, label: "positive" } as const];
-        if (autoSamRun) {
-          queueMicrotask(() => void handleRunSamWithPrompts(next));
-        }
-        return next;
-      });
+      const posPrompt = { type: "point", x: pos.x, y: pos.y, label: "positive" } as const;
+      if (autoSamRun) {
+        setPrompts([posPrompt]);
+        queueMicrotask(() => void handleRunSamWithPrompts([posPrompt], { clearOnSuccess: true }));
+      } else {
+        setPrompts((q) => [...q, posPrompt]);
+      }
     }
   };
 
@@ -885,7 +944,11 @@ export function LabelingPage({ tenantId, datasetId }: LabelingPageProps) {
                 deleteLabelTitle={deleteLabelTitle}
                 onRunSam={handleRunSam}
                 samBusy={samBusy}
-                samDisabled={prompts.length === 0}
+                samDisabled={
+                  !prompts.some(
+                    (p) => p.type === "box" || (p.type === "point" && p.label === "positive"),
+                  )
+                }
                 autoSamRun={autoSamRun}
                 onAutoSamRunChange={setAutoSamRun}
                 samMessage={samMessage}
