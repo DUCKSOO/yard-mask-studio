@@ -39,7 +39,11 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.labeling_config = cfg
     app.state.repo_root = repo_root
-    app.state.sam_predictor = LazySam2Predictor(settings.sam_checkpoint_path, settings.sam_model_cfg)
+    app.state.sam_predictor = LazySam2Predictor(
+        settings.sam_checkpoint_path,
+        settings.sam_model_cfg,
+        embedding_cache_max=settings.sam_embedding_cache_max,
+    )
     yield
     engine.dispose()
 

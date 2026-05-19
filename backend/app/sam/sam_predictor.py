@@ -10,6 +10,11 @@ from typing import Any, Protocol, runtime_checkable
 import numpy as np
 import torch
 
+from backend.app.sam.embedding_cache import (
+    TileEmbeddingLRU,
+    restore_predictor_embedding,
+    snapshot_predictor_embedding,
+)
 from backend.app.sam.prompt_handler import BoxPrompt, PointPrompt
 
 logger = logging.getLogger(__name__)
@@ -28,9 +33,21 @@ class SegmentationBackend(Protocol):
         *,
         multimask_output: bool = True,
         max_candidates: int = 3,
+        embedding_cache_key: str | None = None,
     ) -> list[np.ndarray]:
         """image_hwc: uint8 or float HxWxC. 반환: 각 후보 mask HxW (bool 또는 uint8)."""
         ...
+
+
+def build_tile_embedding_cache_key(
+    tenant_id: str,
+    dataset_id: str,
+    tile_id: str,
+    image_path: Path,
+) -> str:
+    """타일 PNG가 바뀌면(mtime/size) 캐시 키가 달라져 set_image를 다시 실행한다."""
+    st = image_path.stat()
+    return f"{tenant_id}/{dataset_id}/{tile_id}:{st.st_mtime_ns}:{st.st_size}"
 
 
 class StubSegmentationBackend:
@@ -43,7 +60,9 @@ class StubSegmentationBackend:
         *,
         multimask_output: bool = True,
         max_candidates: int = 3,
+        embedding_cache_key: str | None = None,
     ) -> list[np.ndarray]:
+        del embedding_cache_key
         h, w = image_hwc.shape[:2]
         n = len(prompts) if prompts else 1
         return [np.zeros((h, w), dtype=np.float32) for _ in range(min(n, max(1, max_candidates)))]
@@ -88,12 +107,19 @@ def _prompts_to_sam_inputs(
 class LazySam2Predictor:
     """SAM 2 체크포인트가 유효할 때 실추론; 없으면 SamUnavailableError."""
 
-    def __init__(self, checkpoint_path: str | None, model_cfg: str | None) -> None:
+    def __init__(
+        self,
+        checkpoint_path: str | None,
+        model_cfg: str | None,
+        *,
+        embedding_cache_max: int = 4,
+    ) -> None:
         self._checkpoint_path = checkpoint_path
         self._model_cfg = model_cfg
         self._predictor = None
         self._lock = threading.Lock()
         self._device: str = "cpu"
+        self._embedding_lru = TileEmbeddingLRU(embedding_cache_max)
 
         if checkpoint_path and Path(checkpoint_path).is_file():
             logger.info(
@@ -142,6 +168,11 @@ class LazySam2Predictor:
         self._predictor = SAM2ImagePredictor(sam_model)
         logger.info("SAM2ImagePredictor ready")
 
+    def clear_embedding_cache(self) -> None:
+        """테스트·메모리 해제용 — LRU 전체 비우기."""
+        with self._lock:
+            self._embedding_lru.clear()
+
     def predict(
         self,
         image_hwc: np.ndarray,
@@ -149,6 +180,7 @@ class LazySam2Predictor:
         *,
         multimask_output: bool = True,
         max_candidates: int = 3,
+        embedding_cache_key: str | None = None,
     ) -> list[np.ndarray]:
         if not self._checkpoint_path or not Path(self._checkpoint_path).is_file():
             raise SamUnavailableError("SAM_CHECKPOINT_PATH missing or file not found")
@@ -164,8 +196,38 @@ class LazySam2Predictor:
             self._ensure_predictor()
             assert self._predictor is not None
 
+            cached_snap = (
+                self._embedding_lru.get(embedding_cache_key)
+                if embedding_cache_key
+                else None
+            )
+            if cached_snap is not None:
+                logger.debug(
+                    "SAM embedding LRU hit key=%s (%s/%s slots)",
+                    embedding_cache_key,
+                    len(self._embedding_lru),
+                    self._embedding_lru.max_entries,
+                )
+                restore_predictor_embedding(self._predictor, cached_snap)
+            else:
+                if embedding_cache_key is None:
+                    logger.debug("SAM embedding cache bypass (no key)")
+                else:
+                    logger.info(
+                        "SAM embedding LRU miss key=%s (%s/%s slots)",
+                        embedding_cache_key,
+                        len(self._embedding_lru),
+                        self._embedding_lru.max_entries,
+                    )
+
             try:
-                self._predictor.set_image(image_hwc)
+                if cached_snap is None:
+                    self._predictor.set_image(image_hwc)
+                    if embedding_cache_key is not None:
+                        self._embedding_lru.put(
+                            embedding_cache_key,
+                            snapshot_predictor_embedding(self._predictor),
+                        )
                 masks_np, iou_np, _low = self._predictor.predict(
                     point_coords=point_coords,
                     point_labels=point_labels,

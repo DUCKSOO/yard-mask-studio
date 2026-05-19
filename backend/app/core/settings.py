@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     database_url: str = Field(default="sqlite:///./data/labeling.db")
     sam_checkpoint_path: str | None = None
     sam_model_cfg: str | None = None
+    sam_embedding_cache_max: int = Field(
+        default=4,
+        ge=1,
+        le=32,
+        description="SAM 타일 임베딩 LRU 슬롯 수 (동시에 다른 타일을 쓰는 라벨러 수에 맞춤).",
+    )
     app_env: str = "dev"
     labeling_config_path: str = Field(default="config/labeling.dev.yaml")
     default_tenant_id: str = "default"

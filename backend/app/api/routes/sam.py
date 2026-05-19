@@ -16,7 +16,11 @@ from backend.app.api.schemas import SamPredictRequest, SamPredictResponse
 from backend.app.core.tenant import assert_tenant_allowed
 from backend.app.deps import DbSession
 from backend.app.sam import prompt_handler
-from backend.app.sam.sam_predictor import SamUnavailableError, SegmentationBackend
+from backend.app.sam.sam_predictor import (
+    SamUnavailableError,
+    SegmentationBackend,
+    build_tile_embedding_cache_key,
+)
 from backend.app.services import dataset_service
 from backend.app.tiling import tile_index
 
@@ -92,6 +96,9 @@ def sam_predict(
         tile_id,
         len(body.prompts),
     )
+    embedding_cache_key = build_tile_embedding_cache_key(
+        tenant_id, dataset_id, tile_id, img_path
+    )
     t0 = time.perf_counter()
     try:
         masks = backend.predict(
@@ -99,6 +106,7 @@ def sam_predict(
             prompts,
             multimask_output=multimask,
             max_candidates=max_candidates,
+            embedding_cache_key=embedding_cache_key,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
